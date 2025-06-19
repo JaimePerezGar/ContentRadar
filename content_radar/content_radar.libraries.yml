@@ -9,6 +9,18 @@ search:
     - core/jquery
     - core/drupal
 
+selection:
+  version: 1.x
+  css:
+    theme:
+      css/content-radar-selection.css: {}
+  js:
+    js/content-radar-selection.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
+    - core/once
+
 undo-form:
   version: 1.x
   js:

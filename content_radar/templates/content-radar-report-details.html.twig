@@ -6,7 +6,7 @@
  * Available variables:
  * - report: The report object.
  * - summary: Report summary information.
- * - details: Detailed information about affected nodes.
+ * - details: Detailed information about affected entities.
  *
  * @ingroup themeable
  */
@@ -38,18 +38,19 @@
       <dt>{{ 'Total replacements'|t }}</dt>
       <dd><strong>{{ summary.total_replacements }}</strong></dd>
       
-      <dt>{{ 'Nodes affected'|t }}</dt>
-      <dd><strong>{{ summary.nodes_affected }}</strong></dd>
+      <dt>{{ 'Entities affected'|t }}</dt>
+      <dd><strong>{{ summary.entities_affected }}</strong></dd>
     </dl>
   </div>
 
   {% if details %}
     <div class="report-details">
-      <h3>{{ 'Affected Nodes'|t }}</h3>
+      <h3>{{ 'Affected Entities'|t }}</h3>
       <table class="content-radar-report-table">
         <thead>
           <tr>
-            <th>{{ 'Node'|t }}</th>
+            <th>{{ 'Entity Type'|t }}</th>
+            <th>{{ 'Entity'|t }}</th>
             <th>{{ 'Content Type'|t }}</th>
             <th>{{ 'Language'|t }}</th>
             <th>{{ 'Replacements'|t }}</th>
@@ -57,18 +58,30 @@
           </tr>
         </thead>
         <tbody>
-          {% for node in details %}
+          {% for entity in details %}
             <tr>
               <td>
-                <a href="{{ node.url }}" target="_blank">{{ node.title }}</a>
+                <span class="entity-type-badge">{{ entity.entity_type }}</span>
               </td>
-              <td>{{ node.type }}</td>
-              <td>{{ node.langcode }}</td>
-              <td>{{ node.count }}</td>
+              <td>
+                {% if entity.url %}
+                  <a href="{{ entity.url }}" target="_blank">{{ entity.title }}</a>
+                {% else %}
+                  {{ entity.title }}
+                {% endif %}
+                <small>(ID: {{ entity.entity_id }})</small>
+              </td>
+              <td>{{ entity.type }}</td>
+              <td>{{ entity.langcode }}</td>
+              <td><strong>{{ entity.count }}</strong></td>
               <td>
                 <ul class="links inline">
-                  <li><a href="{{ node.url }}" target="_blank">{{ 'View'|t }}</a></li>
-                  <li><a href="{{ node.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
+                  {% if entity.url %}
+                    <li><a href="{{ entity.url }}" target="_blank">{{ 'View'|t }}</a></li>
+                  {% endif %}
+                  {% if entity.edit_url %}
+                    <li><a href="{{ entity.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
+                  {% endif %}
                 </ul>
               </td>
             </tr>

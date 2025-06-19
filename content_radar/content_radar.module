@@ -49,6 +49,13 @@ function content_radar_theme($existing, $type, $theme, $path) {
       'template' => 'content-radar-results',
       'path' => $path . '/templates',
     ],
+    'content_radar_result_item' => [
+      'variables' => [
+        'item' => [],
+      ],
+      'template' => 'content-radar-result-item',
+      'path' => $path . '/templates',
+    ],
     'content_radar_report_details' => [
       'variables' => [
         'report' => NULL,

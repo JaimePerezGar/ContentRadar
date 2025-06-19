@@ -104,7 +104,7 @@ class ReportsController extends ControllerBase {
       $this->t('Replace Term'),
       $this->t('Language'),
       $this->t('Replacements'),
-      $this->t('Nodes Affected'),
+      $this->t('Entities Affected'),
       $this->t('Actions'),
     ];
 
@@ -161,6 +161,21 @@ class ReportsController extends ControllerBase {
         ];
       }
 
+      // Determine entity count label
+      $entity_count_label = $report->nodes_affected;
+      $details = @unserialize($report->details);
+      if ($details && is_array($details)) {
+        $entity_types = [];
+        foreach ($details as $entity_data) {
+          if (isset($entity_data['entity_type'])) {
+            $entity_types[$entity_data['entity_type']] = TRUE;
+          }
+        }
+        if (count($entity_types) > 1) {
+          $entity_count_label .= ' (' . $this->t('mixed types') . ')';
+        }
+      }
+
       $rows[] = [
         $this->dateFormatter->format($report->created, 'short'),
         $username,
@@ -168,7 +183,7 @@ class ReportsController extends ControllerBase {
         $report->replace_term,
         $language,
         $report->total_replacements,
-        $report->nodes_affected,
+        $entity_count_label,
         [
           'data' => [
             '#type' => 'operations',
@@ -228,22 +243,47 @@ class ReportsController extends ControllerBase {
       'language' => $report->langcode ?: $this->t('All languages'),
       'use_regex' => $report->use_regex ? $this->t('Yes') : $this->t('No'),
       'total_replacements' => $report->total_replacements,
-      'nodes_affected' => $report->nodes_affected,
+      'entities_affected' => $report->nodes_affected,
     ];
 
     // Prepare details data.
     $details_data = [];
     $details = unserialize($report->details);
     if (!empty($details)) {
-      foreach ($details as $node_data) {
+      foreach ($details as $entity_data) {
+        $entity_type = isset($entity_data['entity_type']) ? $entity_data['entity_type'] : 'node';
+        $entity_id = isset($entity_data['id']) ? $entity_data['id'] : (isset($entity_data['nid']) ? $entity_data['nid'] : null);
+        
+        if (!$entity_id) {
+          continue;
+        }
+        
+        $url = '';
+        $edit_url = '';
+        
+        try {
+          if ($entity_type === 'node') {
+            $url = Url::fromRoute('entity.node.canonical', ['node' => $entity_id])->toString();
+            $edit_url = Url::fromRoute('entity.node.edit_form', ['node' => $entity_id])->toString();
+          }
+          else {
+            // Try to build generic entity URLs
+            $url = Url::fromRoute('entity.' . $entity_type . '.canonical', [$entity_type => $entity_id])->toString();
+            $edit_url = Url::fromRoute('entity.' . $entity_type . '.edit_form', [$entity_type => $entity_id])->toString();
+          }
+        } catch (\Exception $e) {
+          // Some entities may not have standard URLs
+        }
+        
         $details_data[] = [
-          'nid' => $node_data['nid'],
-          'title' => $node_data['title'],
-          'type' => $node_data['type'],
-          'langcode' => $node_data['langcode'],
-          'count' => $node_data['count'],
-          'url' => Url::fromRoute('entity.node.canonical', ['node' => $node_data['nid']])->toString(),
-          'edit_url' => Url::fromRoute('entity.node.edit_form', ['node' => $node_data['nid']])->toString(),
+          'entity_type' => $entity_type,
+          'entity_id' => $entity_id,
+          'title' => $entity_data['title'],
+          'type' => $entity_data['type'],
+          'langcode' => $entity_data['langcode'],
+          'count' => $entity_data['count'],
+          'url' => $url,
+          'edit_url' => $edit_url,
         ];
       }
     }
@@ -307,7 +347,8 @@ class ReportsController extends ControllerBase {
 
       // Write details header.
       fputcsv($handle, [
-        $this->t('Node ID'),
+        $this->t('Entity Type'),
+        $this->t('Entity ID'),
         $this->t('Title'),
         $this->t('Content Type'),
         $this->t('Language'),
@@ -319,22 +360,38 @@ class ReportsController extends ControllerBase {
       // Write details.
       $details = unserialize($report->details);
       if (!empty($details)) {
-        foreach ($details as $node_data) {
+        foreach ($details as $entity_data) {
+          $entity_type = isset($entity_data['entity_type']) ? $entity_data['entity_type'] : 'node';
+          $entity_id = isset($entity_data['id']) ? $entity_data['id'] : (isset($entity_data['nid']) ? $entity_data['nid'] : '');
+          
           $fields_modified = [];
-          foreach ($node_data['fields'] as $field_name => $count) {
-            $fields_modified[] = $field_name . ' (' . $count . ')';
+          if (isset($entity_data['fields']) && is_array($entity_data['fields'])) {
+            foreach ($entity_data['fields'] as $field_name => $count) {
+              $fields_modified[] = $field_name . ' (' . $count . ')';
+            }
           }
 
-          $url = Url::fromRoute('entity.node.canonical', ['node' => $node_data['nid']], ['absolute' => TRUE])->toString();
+          $url = '';
+          try {
+            if ($entity_type === 'node' && $entity_id) {
+              $url = Url::fromRoute('entity.node.canonical', ['node' => $entity_id], ['absolute' => TRUE])->toString();
+            }
+            elseif ($entity_id) {
+              $url = Url::fromRoute('entity.' . $entity_type . '.canonical', [$entity_type => $entity_id], ['absolute' => TRUE])->toString();
+            }
+          } catch (\Exception $e) {
+            // Some entities may not have URLs
+          }
 
           fputcsv($handle, [
-            $node_data['nid'],
-            $node_data['title'],
-            $node_data['type'],
-            $node_data['langcode'],
+            $entity_type,
+            $entity_id,
+            $entity_data['title'],
+            $entity_data['type'],
+            $entity_data['langcode'],
             $url,
             implode(', ', $fields_modified),
-            $node_data['count'],
+            $entity_data['count'],
           ]);
         }
       }

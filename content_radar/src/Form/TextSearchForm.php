@@ -146,6 +146,31 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('langcode', ''),
     ];
 
+    // Entity types selection
+    $form['entity_types_container'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Entity types'),
+      '#open' => FALSE,
+      '#description' => $this->t('Select entity types to search in. Leave unchecked to search all supported entity types.'),
+    ];
+
+    $entity_type_options = [
+      'node' => $this->t('Content'),
+      'block_content' => $this->t('Custom blocks'),
+      'taxonomy_term' => $this->t('Taxonomy terms'),
+      'user' => $this->t('Users'),
+      'media' => $this->t('Media'),
+      'paragraph' => $this->t('Paragraphs'),
+      'menu_link_content' => $this->t('Menu links'),
+      'comment' => $this->t('Comments'),
+    ];
+
+    $form['entity_types_container']['entity_types'] = [
+      '#type' => 'checkboxes',
+      '#options' => $entity_type_options,
+      '#default_value' => $form_state->getValue('entity_types', []),
+    ];
+
     // Get available content types.
     $content_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
     $options = [];
@@ -159,6 +184,11 @@ class TextSearchForm extends FormBase {
       '#title' => $this->t('Content types'),
       '#open' => FALSE,
       '#description' => $this->t('Select specific content types to search in. Leave unchecked to search all content types.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="entity_types[node]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     $form['content_types_container']['content_types'] = [
@@ -169,8 +199,8 @@ class TextSearchForm extends FormBase {
 
     $form['sort_alphabetically'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Sort content types alphabetically'),
-      '#description' => $this->t('Group and sort results by content type in alphabetical order.'),
+      '#title' => $this->t('Sort results by entity type'),
+      '#description' => $this->t('Group and sort results by entity type.'),
       '#default_value' => $form_state->getValue('sort_alphabetically', TRUE),
     ];
 
@@ -186,17 +216,32 @@ class TextSearchForm extends FormBase {
       $form['replace_container']['replace_term'] = [
         '#type' => 'textfield',
         '#title' => $this->t('Replace "' . $form_state->getValue('search_term') . '" with:'),
-        '#description' => $this->t('Enter the text that will replace all occurrences of your search term.'),
+        '#description' => $this->t('Enter the text that will replace selected occurrences of your search term.'),
         '#size' => 60,
         '#maxlength' => 255,
         '#default_value' => $form_state->getValue('replace_term', ''),
         '#placeholder' => $this->t('Enter replacement text...'),
       ];
       
+      $form['replace_container']['replace_mode'] = [
+        '#type' => 'radios',
+        '#title' => $this->t('Replace mode'),
+        '#options' => [
+          'all' => $this->t('Replace all occurrences'),
+          'selected' => $this->t('Replace only selected occurrences'),
+        ],
+        '#default_value' => $form_state->getValue('replace_mode', 'selected'),
+        '#states' => [
+          'visible' => [
+            ':input[name="replace_term"]' => ['filled' => TRUE],
+          ],
+        ],
+      ];
+      
       $form['replace_container']['replace_confirm'] = [
         '#type' => 'checkbox',
         '#title' => $this->t('I understand this will modify content'),
-        '#description' => $this->t('Check this box to confirm you want to replace text. This action cannot be undone.'),
+        '#description' => $this->t('Check this box to confirm you want to replace text. Changes will be tracked and can be reverted.'),
         '#default_value' => FALSE,
         '#states' => [
           'visible' => [
@@ -224,7 +269,7 @@ class TextSearchForm extends FormBase {
     if ($this->currentUser->hasPermission('replace content radar') && $results && $results['total'] > 0) {
       $form['actions']['replace'] = [
         '#type' => 'submit',
-        '#value' => $this->t('Replace All'),
+        '#value' => $this->t('Replace'),
         '#button_type' => 'danger',
         '#submit' => ['::replaceSubmit'],
         '#states' => [
@@ -244,45 +289,62 @@ class TextSearchForm extends FormBase {
         '#attributes' => ['class' => ['content-radar-results-container']],
       ];
 
-      // Group results by content type for card view.
+      // Add select all checkbox
+      if ($results['total'] > 0) {
+        $form['results_container']['select_all'] = [
+          '#type' => 'checkbox',
+          '#title' => $this->t('Select all'),
+          '#attributes' => ['class' => ['select-all-checkbox']],
+        ];
+      }
+
+      // Group results by entity type
       $grouped_results = [];
       if ($results['total'] > 0 && !empty($results['items'])) {
-        foreach ($results['items'] as $item) {
-          $content_type = $item['content_type'];
-          if (!isset($grouped_results[$content_type])) {
-            $grouped_results[$content_type] = [];
-          }
+        foreach ($results['items'] as $index => $item) {
+          $entity_type = $item['entity_type'];
+          $entity_type_label = $this->getEntityTypeLabel($entity_type);
           
-          // Prepare item data for template.
-          $entity = $item['entity'];
-          $view_url = $entity->toUrl()->setOption('attributes', ['target' => '_blank']);
-          $edit_url = NULL;
-          if ($entity->access('update', $this->currentUser)) {
-            $edit_url = $entity->toUrl('edit-form')->setOption('attributes', ['target' => '_blank']);
-          }
-          
-          // Get usage/references.
-          $usage = $this->textSearchService->getEntityUsage($entity);
-          $usage_prepared = [];
-          foreach ($usage as $ref) {
-            $usage_prepared[] = [
-              'title' => $ref['title'],
-              'url' => Url::fromRoute('entity.node.canonical', ['node' => $ref['id']])
-                ->setOption('attributes', ['target' => '_blank']),
+          if (!isset($grouped_results[$entity_type_label])) {
+            $grouped_results[$entity_type_label] = [
+              'entity_type' => $entity_type,
+              'items' => [],
             ];
           }
           
-          $grouped_results[$content_type][] = [
+          // Prepare item data
+          $entity = $item['entity'];
+          $view_url = NULL;
+          $edit_url = NULL;
+          
+          try {
+            if ($entity->hasLinkTemplate('canonical')) {
+              $view_url = $entity->toUrl()->setOption('attributes', ['target' => '_blank']);
+            }
+            if ($entity->access('update', $this->currentUser) && $entity->hasLinkTemplate('edit-form')) {
+              $edit_url = $entity->toUrl('edit-form')->setOption('attributes', ['target' => '_blank']);
+            }
+          } catch (\Exception $e) {
+            // Some entities may not have URLs
+          }
+          
+          // Create unique key for selection
+          $item_key = $entity_type . ':' . $item['id'] . ':' . $item['field_name'] . ':' . $item['langcode'];
+          
+          $grouped_results[$entity_type_label]['items'][] = [
+            'key' => $item_key,
+            'index' => $index,
+            'entity_type' => $entity_type,
+            'content_type' => $item['content_type'],
             'id' => $item['id'],
             'title' => $item['title'],
             'language' => $item['language'] ?? $this->t('Unknown'),
             'field_label' => $item['field_label'],
             'extract' => $item['extract'],
             'status' => $item['status'],
-            'changed' => is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i') : date('Y-m-d H:i', $item['changed']),
+            'changed' => isset($item['changed']) ? (is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i') : date('Y-m-d H:i', $item['changed'])) : '',
             'view_url' => $view_url,
             'edit_url' => $edit_url,
-            'usage' => $usage_prepared,
           ];
         }
       }
@@ -300,21 +362,72 @@ class TextSearchForm extends FormBase {
         ]);
       }
 
-      // Use theme function for better presentation.
-      $form['results_container']['results'] = [
-        '#theme' => 'content_radar_results',
-        '#results' => $results['items'],
-        '#grouped_results' => $grouped_results,
-        '#total' => $results['total'],
-        '#search_term' => $form_state->getValue('search_term'),
-        '#is_regex' => $form_state->getValue('use_regex'),
-        '#langcode' => $form_state->getValue('langcode'),
-        '#sort_alphabetically' => $form_state->getValue('sort_alphabetically', TRUE),
-        '#export_url' => $export_url,
-        '#pager' => [
-          '#type' => 'pager',
-        ],
+      // Sort grouped results if needed
+      if ($form_state->getValue('sort_alphabetically', TRUE)) {
+        ksort($grouped_results);
+      }
+
+      // Build selectable results
+      foreach ($grouped_results as $entity_type_label => $group_data) {
+        $form['results_container'][$entity_type_label] = [
+          '#type' => 'details',
+          '#title' => $this->t('@type (@count)', [
+            '@type' => $entity_type_label,
+            '@count' => count($group_data['items']),
+          ]),
+          '#open' => TRUE,
+          '#attributes' => ['class' => ['entity-type-group']],
+        ];
+
+        $form['results_container'][$entity_type_label]['select_group'] = [
+          '#type' => 'checkbox',
+          '#title' => $this->t('Select all in this group'),
+          '#attributes' => ['class' => ['select-group-checkbox'], 'data-group' => $entity_type_label],
+        ];
+
+        $form['results_container'][$entity_type_label]['items'] = [
+          '#type' => 'container',
+          '#attributes' => ['class' => ['results-items']],
+        ];
+
+        foreach ($group_data['items'] as $item) {
+          $item_id = 'item_' . $item['index'];
+          
+          $form['results_container'][$entity_type_label]['items'][$item_id] = [
+            '#type' => 'container',
+            '#attributes' => ['class' => ['result-item']],
+          ];
+
+          $form['results_container'][$entity_type_label]['items'][$item_id]['selected'] = [
+            '#type' => 'checkbox',
+            '#title' => '',
+            '#default_value' => FALSE,
+            '#attributes' => [
+              'class' => ['item-select-checkbox'],
+              'data-group' => $entity_type_label,
+              'data-key' => $item['key'],
+            ],
+          ];
+
+          // Create structured display
+          $item_display = [
+            '#theme' => 'content_radar_result_item',
+            '#item' => $item,
+          ];
+
+          $form['results_container'][$entity_type_label]['items'][$item_id]['display'] = $item_display;
+        }
+      }
+
+      // Store selected items in form state
+      $form['results_container']['selected_items'] = [
+        '#type' => 'hidden',
+        '#value' => '',
+        '#attributes' => ['id' => 'selected-items-data'],
       ];
+
+      // Add JavaScript for selection handling
+      $form['#attached']['library'][] = 'content_radar/selection';
     }
 
     return $form;
@@ -450,6 +563,7 @@ class TextSearchForm extends FormBase {
     $replace_term = $form_state->getValue('replace_term');
     $use_regex = $form_state->getValue('use_regex');
     $langcode = $form_state->getValue('langcode', '');
+    $replace_mode = $form_state->getValue('replace_mode', 'selected');
     
     if (!$form_state->getValue('replace_confirm')) {
       $this->messenger()->addError($this->t('You must confirm the replacement action.'));
@@ -464,34 +578,47 @@ class TextSearchForm extends FormBase {
       return;
     }
     
-    // Collect unique nodes from search results.
-    $nodes_to_process = [];
-    foreach ($results['items'] as $item) {
-      $nid = $item['id'];
-      if (!isset($nodes_to_process[$nid])) {
-        $nodes_to_process[$nid] = [
-          'nid' => $nid,
-          'title' => $item['title'],
-          'type' => $item['entity']->bundle(),
-          'langcode' => $item['langcode'],
-        ];
+    // Get selected items from form submission
+    $selected_items = [];
+    if ($replace_mode === 'selected') {
+      // Parse selected items from form values
+      $form_values = $form_state->getValues();
+      foreach ($form_values as $key => $value) {
+        if (strpos($key, 'selected') === 0 && $value == 1) {
+          // Extract the item key from the form element
+          $parent_key = $form_state->getValue(['results_container', $key, '#attributes', 'data-key']);
+          if ($parent_key) {
+            $selected_items[$parent_key] = TRUE;
+          }
+        }
+      }
+      
+      // Also check nested form structure
+      $results_container = $form_state->getValue('results_container');
+      if (is_array($results_container)) {
+        foreach ($results_container as $group_key => $group_data) {
+          if (is_array($group_data) && isset($group_data['items'])) {
+            foreach ($group_data['items'] as $item_key => $item_data) {
+              if (isset($item_data['selected']) && $item_data['selected'] == 1) {
+                // Get the data-key attribute
+                if (isset($form['results_container'][$group_key]['items'][$item_key]['selected']['#attributes']['data-key'])) {
+                  $data_key = $form['results_container'][$group_key]['items'][$item_key]['selected']['#attributes']['data-key'];
+                  $selected_items[$data_key] = TRUE;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      if (empty($selected_items)) {
+        $this->messenger()->addError($this->t('Please select at least one item to replace.'));
+        $form_state->setRebuild();
+        return;
       }
     }
     
-    // Log what we're about to process
-    \Drupal::logger('content_radar')->notice('Starting batch replacement: @count nodes, search: "@search", replace: "@replace", langcode: "@lang"', [
-      '@count' => count($nodes_to_process),
-      '@search' => $search_term,
-      '@replace' => $replace_term,
-      '@lang' => $langcode ?: 'all',
-    ]);
-    
-    if (empty($nodes_to_process)) {
-      $this->messenger()->addWarning($this->t('No content to process.'));
-      return;
-    }
-    
-    // Set up batch operation.
+    // Set up batch operation
     $batch = [
       'title' => $this->t('Replacing text across content'),
       'operations' => [],
@@ -501,12 +628,33 @@ class TextSearchForm extends FormBase {
       'error_message' => $this->t('An error occurred during processing.'),
     ];
     
-    // Process each node individually for better progress feedback.
-    foreach ($nodes_to_process as $nid => $node_info) {
+    if ($replace_mode === 'all') {
+      // Collect unique entities from search results
+      $entities_to_process = [];
+      foreach ($results['items'] as $item) {
+        $entity_key = $item['entity_type'] . ':' . $item['id'] . ':' . $item['langcode'];
+        if (!isset($entities_to_process[$entity_key])) {
+          $entities_to_process[$entity_key] = [
+            'entity_type' => $item['entity_type'],
+            'entity_id' => $item['id'],
+            'title' => $item['title'],
+            'langcode' => $item['langcode'],
+          ];
+        }
+      }
+      
+      // Process each entity individually
+      foreach ($entities_to_process as $entity_info) {
+        $batch['operations'][] = [
+          '\Drupal\content_radar\Form\TextSearchForm::batchProcessEntity',
+          [$entity_info['entity_type'], $entity_info['entity_id'], $search_term, $replace_term, $use_regex, $langcode],
+        ];
+      }
+    } else {
+      // Process only selected items
       $batch['operations'][] = [
-        '\Drupal\content_radar\Form\TextSearchForm::batchProcessSingle',
-        // Pass the search langcode (not the node's langcode) to ensure we replace in the same language we searched in
-        [$nid, $search_term, $replace_term, $use_regex, $langcode],
+        '\Drupal\content_radar\Form\TextSearchForm::batchProcessSelected',
+        [$selected_items, $search_term, $replace_term, $use_regex],
       ];
     }
     
@@ -517,6 +665,7 @@ class TextSearchForm extends FormBase {
     $session->set('content_radar_search_params', [
       'search_term' => $search_term,
       'use_regex' => $use_regex,
+      'entity_types' => array_filter($form_state->getValue(['entity_types_container', 'entity_types'], [])),
       'content_types' => array_filter($form_state->getValue(['content_types_container', 'content_types'], [])),
       'langcode' => $langcode,
     ]);
@@ -528,11 +677,13 @@ class TextSearchForm extends FormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $use_regex = $form_state->getValue('use_regex');
+    $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
     $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
     $langcode = $form_state->getValue('langcode', '');
 
     // Create cache key.
-    $cache_key = 'content_radar:' . md5($search_term . ':' . ($use_regex ? '1' : '0') . ':' . implode(',', $content_types) . ':' . $langcode);
+    $cache_key = 'content_radar:' . md5($search_term . ':' . ($use_regex ? '1' : '0') . ':' . 
+      implode(',', $entity_types) . ':' . implode(',', $content_types) . ':' . $langcode);
     
     // Check if we should force fresh results (after replacement)
     $force_fresh = $form_state->get('force_fresh_results');
@@ -544,14 +695,14 @@ class TextSearchForm extends FormBase {
         $results = $cache->data;
       } else {
         // Perform search.
-        $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode);
+        $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode, 0, 50, $entity_types);
         
         // Cache results for 15 minutes.
         $this->cache->set($cache_key, $results, time() + 900);
       }
     } else {
       // Force fresh search.
-      $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode);
+      $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode, 0, 50, $entity_types);
       
       // Cache results for 15 minutes.
       $this->cache->set($cache_key, $results, time() + 900);
@@ -565,15 +716,39 @@ class TextSearchForm extends FormBase {
   }
 
   /**
-   * Batch process callback for single node replacement.
+   * Get entity type label.
+   *
+   * @param string $entity_type_id
+   *   The entity type ID.
+   *
+   * @return string
+   *   The entity type label.
    */
-  public static function batchProcessSingle($nid, $search_term, $replace_term, $use_regex, $langcode, &$context) {
+  protected function getEntityTypeLabel($entity_type_id) {
+    $labels = [
+      'node' => $this->t('Content'),
+      'block_content' => $this->t('Custom blocks'),
+      'taxonomy_term' => $this->t('Taxonomy terms'),
+      'user' => $this->t('Users'),
+      'media' => $this->t('Media'),
+      'paragraph' => $this->t('Paragraphs'),
+      'menu_link_content' => $this->t('Menu links'),
+      'comment' => $this->t('Comments'),
+    ];
+    
+    return isset($labels[$entity_type_id]) ? $labels[$entity_type_id] : $entity_type_id;
+  }
+
+  /**
+   * Batch process callback for entity replacement.
+   */
+  public static function batchProcessEntity($entity_type, $entity_id, $search_term, $replace_term, $use_regex, $langcode, &$context) {
     // Initialize results in context.
     if (!isset($context['results']['replaced_count'])) {
       $context['results']['replaced_count'] = 0;
-      $context['results']['processed_nodes'] = 0;
+      $context['results']['processed_entities'] = 0;
       $context['results']['errors'] = [];
-      $context['results']['node_details'] = [];
+      $context['results']['entity_details'] = [];
       $context['results']['search_term'] = $search_term;
       $context['results']['replace_term'] = $replace_term;
       $context['results']['use_regex'] = $use_regex;
@@ -581,102 +756,90 @@ class TextSearchForm extends FormBase {
     }
     
     $text_search_service = \Drupal::service('content_radar.search_service');
-    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
     
     try {
-      $node = $node_storage->load($nid);
-      if (!$node) {
-        $context['results']['errors'][] = t('Node @nid not found.', ['@nid' => $nid]);
-        return;
-      }
+      $result = $text_search_service->replaceText(
+        $search_term,
+        $replace_term,
+        $use_regex,
+        [],
+        $langcode,
+        FALSE,
+        [$entity_type],
+        [$entity_type . ':' . $entity_id . ':all:' . $langcode => TRUE]
+      );
       
-      $count = 0;
-      $node_modified = FALSE;
-      
-      \Drupal::logger('content_radar')->debug('Processing node @nid for replacement. Language: @lang', [
-        '@nid' => $nid,
-        '@lang' => $langcode ?: 'all',
-      ]);
-      
-      // If searching with specific language, only process that translation.
-      if (!empty($langcode) && $node->hasTranslation($langcode)) {
-        $translation = $node->getTranslation($langcode);
-        \Drupal::logger('content_radar')->debug('Processing translation @lang of node @nid', [
-          '@lang' => $langcode,
-          '@nid' => $nid,
-        ]);
-        
-        $count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
-        if ($count > 0) {
-          $translation->save();
-          $node_modified = TRUE;
-          \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid translation @lang', [
-            '@count' => $count,
-            '@nid' => $nid,
-            '@lang' => $langcode,
-          ]);
-        }
-      }
-      // If no specific language, process default language first then other translations.
-      elseif (empty($langcode)) {
-        // Process default language
-        $default_lang = $node->language()->getId();
-        $count = $text_search_service->replaceInNode($node, $search_term, $replace_term, $use_regex);
-        if ($count > 0) {
-          $node->save();
-          $node_modified = TRUE;
-          \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid default language @lang', [
-            '@count' => $count,
-            '@nid' => $nid,
-            '@lang' => $default_lang,
-          ]);
-        }
-        
-        // Process other translations
-        foreach ($node->getTranslationLanguages() as $lang_code => $language) {
-          if ($lang_code != $default_lang) {
-            $translation = $node->getTranslation($lang_code);
-            $translation_count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
-            if ($translation_count > 0) {
-              $translation->save();
-              $count += $translation_count;
-              $node_modified = TRUE;
-              \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid translation @lang', [
-                '@count' => $translation_count,
-                '@nid' => $nid,
-                '@lang' => $lang_code,
-              ]);
-            }
-          }
-        }
-      }
-      
-      if ($node_modified) {
-        $context['results']['replaced_count'] += $count;
-        $context['message'] = t('Replaced @count occurrences in: @title', [
-          '@count' => $count,
-          '@title' => $node->getTitle()
-        ]);
+      if ($result['replaced_count'] > 0) {
+        $context['results']['replaced_count'] += $result['replaced_count'];
+        $context['results']['processed_entities']++;
         
         // Store details for the report
-        $context['results']['node_details'][$nid] = [
-          'nid' => $nid,
-          'title' => $node->getTitle(),
-          'type' => $node->bundle(),
-          'langcode' => !empty($langcode) ? $langcode : $node->language()->getId(),
-          'count' => $count,
-          'fields' => ['Multiple fields' => $count], // Simplified for now
-        ];
+        foreach ($result['affected_entities'] as $entity_info) {
+          $key = $entity_info['entity_type'] . ':' . $entity_info['id'];
+          $context['results']['entity_details'][$key] = $entity_info;
+        }
+        
+        $context['message'] = t('Replaced @count occurrences', ['@count' => $result['replaced_count']]);
       }
       
-      $context['results']['processed_nodes']++;
-      
     } catch (\Exception $e) {
-      $context['results']['errors'][] = t('Error processing node @nid: @error', [
-        '@nid' => $nid,
+      $context['results']['errors'][] = t('Error processing @type @id: @error', [
+        '@type' => $entity_type,
+        '@id' => $entity_id,
         '@error' => $e->getMessage(),
       ]);
-      \Drupal::logger('content_radar')->error('Batch process error: @error', ['@error' => $e->getMessage()]);
+    }
+  }
+
+  /**
+   * Batch process callback for selected items replacement.
+   */
+  public static function batchProcessSelected($selected_items, $search_term, $replace_term, $use_regex, &$context) {
+    // Initialize results in context.
+    if (!isset($context['results']['replaced_count'])) {
+      $context['results']['replaced_count'] = 0;
+      $context['results']['processed_entities'] = 0;
+      $context['results']['errors'] = [];
+      $context['results']['entity_details'] = [];
+      $context['results']['search_term'] = $search_term;
+      $context['results']['replace_term'] = $replace_term;
+      $context['results']['use_regex'] = $use_regex;
+    }
+    
+    $text_search_service = \Drupal::service('content_radar.search_service');
+    
+    try {
+      $result = $text_search_service->replaceText(
+        $search_term,
+        $replace_term,
+        $use_regex,
+        [],
+        '',
+        FALSE,
+        [],
+        $selected_items
+      );
+      
+      if ($result['replaced_count'] > 0) {
+        $context['results']['replaced_count'] += $result['replaced_count'];
+        $context['results']['processed_entities'] += count($result['affected_entities']);
+        
+        // Store details for the report
+        foreach ($result['affected_entities'] as $entity_info) {
+          $key = $entity_info['entity_type'] . ':' . $entity_info['id'];
+          $context['results']['entity_details'][$key] = $entity_info;
+        }
+        
+        $context['message'] = t('Replaced @count occurrences in @entities entities', [
+          '@count' => $result['replaced_count'],
+          '@entities' => count($result['affected_entities']),
+        ]);
+      }
+      
+    } catch (\Exception $e) {
+      $context['results']['errors'][] = t('Error processing selected items: @error', [
+        '@error' => $e->getMessage(),
+      ]);
     }
   }
 
@@ -742,19 +905,24 @@ class TextSearchForm extends FormBase {
     
     if ($success) {
       if (!empty($results['replaced_count'])) {
+        $entity_count = isset($results['processed_entities']) ? $results['processed_entities'] : 
+                       (isset($results['processed_nodes']) ? $results['processed_nodes'] : 0);
+        
         $messenger->addStatus(\Drupal::translation()->formatPlural(
           $results['replaced_count'],
-          'Successfully replaced 1 occurrence in @node_count content items.',
-          'Successfully replaced @count occurrences in @node_count content items.',
+          'Successfully replaced 1 occurrence in @entity_count entities.',
+          'Successfully replaced @count occurrences in @entity_count entities.',
           [
-            '@node_count' => $results['processed_nodes'],
+            '@entity_count' => $entity_count,
           ]
         ));
         
         // Save the report to database
         try {
           $database = \Drupal::database();
-          $node_details = isset($results['node_details']) ? $results['node_details'] : [];
+          $entity_details = isset($results['entity_details']) ? $results['entity_details'] : 
+                           (isset($results['node_details']) ? $results['node_details'] : []);
+          
           $rid = $database->insert('content_radar_reports')
             ->fields([
               'uid' => \Drupal::currentUser()->id(),
@@ -764,8 +932,8 @@ class TextSearchForm extends FormBase {
               'use_regex' => isset($results['use_regex']) && $results['use_regex'] ? 1 : 0,
               'langcode' => isset($results['langcode']) ? $results['langcode'] : '',
               'total_replacements' => $results['replaced_count'],
-              'nodes_affected' => count($node_details),
-              'details' => serialize($node_details),
+              'nodes_affected' => count($entity_details),
+              'details' => serialize($entity_details),
             ])
             ->execute();
           
@@ -779,9 +947,9 @@ class TextSearchForm extends FormBase {
         }
         
         // Log the action.
-        \Drupal::logger('content_radar')->notice('Batch replacement completed: @count replacements in @nodes nodes', [
+        \Drupal::logger('content_radar')->notice('Batch replacement completed: @count replacements in @entities entities', [
           '@count' => $results['replaced_count'],
-          '@nodes' => $results['processed_nodes'],
+          '@entities' => $entity_count,
         ]);
         
         // Clear all caches to ensure fresh results.

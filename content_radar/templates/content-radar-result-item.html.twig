@@ -1,0 +1,71 @@
+{#
+/**
+ * @file
+ * Template for displaying a single search result item.
+ *
+ * Available variables:
+ * - item: Array containing:
+ *   - entity_type: The entity type ID
+ *   - content_type: The content/bundle type
+ *   - id: Entity ID
+ *   - title: Entity title
+ *   - language: Language name
+ *   - field_label: Field label where match was found
+ *   - extract: Text extract with highlighted match
+ *   - status: Published status (if applicable)
+ *   - changed: Last modified date
+ *   - view_url: URL to view the entity
+ *   - edit_url: URL to edit the entity
+ */
+#}
+
+<div class="result-item-content">
+  <div class="result-item-header">
+    <h4 class="result-item-title">{{ item.title }}</h4>
+    <div class="result-item-badges">
+      <span class="entity-badge">{{ item.entity_type }}</span>
+      {% if item.language %}
+        <span class="language-badge">{{ item.language }}</span>
+      {% endif %}
+      {% if item.status is not null %}
+        <span class="status-badge {{ item.status ? 'published' : 'unpublished' }}">
+          {{ item.status ? 'Published'|t : 'Unpublished'|t }}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="result-item-meta">
+    <div class="meta-item">
+      <strong>{{ 'ID'|t }}:</strong> {{ item.id }}
+    </div>
+    <div class="meta-item">
+      <strong>{{ 'Type'|t }}:</strong> {{ item.content_type }}
+    </div>
+    <div class="meta-item">
+      <strong>{{ 'Field'|t }}:</strong> {{ item.field_label }}
+    </div>
+    {% if item.changed %}
+      <div class="meta-item">
+        <strong>{{ 'Modified'|t }}:</strong> {{ item.changed }}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if item.extract %}
+    <div class="result-item-extract">
+      {{ item.extract|raw }}
+    </div>
+  {% endif %}
+
+  {% if item.view_url or item.edit_url %}
+    <div class="result-item-actions">
+      {% if item.view_url %}
+        <a href="{{ item.view_url }}" target="_blank">{{ 'View'|t }}</a>
+      {% endif %}
+      {% if item.edit_url %}
+        <a href="{{ item.edit_url }}" target="_blank">{{ 'Edit'|t }}</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

@@ -97,31 +97,45 @@ class TextSearchService {
    *   The page number.
    * @param int $limit
    *   Items per page.
+   * @param array $entity_types
+   *   Entity types to search in. Empty for all.
    *
    * @return array
    *   Array with 'items' and 'total' keys.
    */
-  public function search($search_term, $use_regex = FALSE, array $content_types = [], $langcode = '', $page = 0, $limit = 50) {
+  public function search($search_term, $use_regex = FALSE, array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $entity_types = []) {
     $results = [];
     $total = 0;
 
     try {
-      // Get all node types if none specified.
-      if (empty($content_types)) {
-        $node_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
-        $content_types = array_keys($node_types);
+      // If no entity types specified, search all searchable entities
+      if (empty($entity_types)) {
+        $entity_types = $this->getSearchableEntityTypes();
       }
 
-      // Search in each content type.
-      foreach ($content_types as $content_type) {
-        $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
+      // Search in each entity type
+      foreach ($entity_types as $entity_type) {
+        if ($entity_type === 'node') {
+          // For nodes, use the existing logic with content types
+          if (empty($content_types)) {
+            $node_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
+            $content_types = array_keys($node_types);
+          }
+          foreach ($content_types as $content_type) {
+            $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
+          }
+        }
+        else {
+          // For other entity types
+          $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode));
+        }
       }
 
       // Sort by relevance and timestamp.
       usort($results, function ($a, $b) {
         // Handle both DateTime objects and timestamps
-        $timestampA = is_object($a['changed']) ? $a['changed']->getTimestamp() : $a['changed'];
-        $timestampB = is_object($b['changed']) ? $b['changed']->getTimestamp() : $b['changed'];
+        $timestampA = isset($a['changed']) ? (is_object($a['changed']) ? $a['changed']->getTimestamp() : $a['changed']) : 0;
+        $timestampB = isset($b['changed']) ? (is_object($b['changed']) ? $b['changed']->getTimestamp() : $b['changed']) : 0;
         return $timestampB - $timestampA;
       });
 
@@ -370,6 +384,367 @@ class TextSearchService {
   }
 
   /**
+   * Replace text in selected items.
+   *
+   * @param array $selected_items
+   *   Array of selected items.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return array
+   *   Array with 'count' and 'entities' keys.
+   */
+  protected function replaceInSelectedItems(array $selected_items, $search_term, $replace_term, $use_regex, $dry_run) {
+    $count = 0;
+    $affected_entities = [];
+    $entities_to_save = [];
+    
+    foreach ($selected_items as $item_key => $selected) {
+      if (!$selected) {
+        continue;
+      }
+      
+      // Parse the item key: entity_type:entity_id:field_name:langcode
+      $parts = explode(':', $item_key);
+      if (count($parts) < 3) {
+        continue;
+      }
+      
+      $entity_type = $parts[0];
+      $entity_id = $parts[1];
+      $field_name = $parts[2];
+      $langcode = isset($parts[3]) ? $parts[3] : NULL;
+      
+      try {
+        $entity = $this->entityTypeManager->getStorage($entity_type)->load($entity_id);
+        if (!$entity) {
+          continue;
+        }
+        
+        // Handle translation if langcode is specified
+        if ($langcode && $entity instanceof \Drupal\Core\Entity\TranslatableInterface && $entity->hasTranslation($langcode)) {
+          $entity = $entity->getTranslation($langcode);
+        }
+        
+        // Create unique key for this entity
+        $entity_key = $entity_type . ':' . $entity_id . ':' . ($langcode ?: 'und');
+        
+        // Initialize tracking for this entity if not already done
+        if (!isset($entities_to_save[$entity_key])) {
+          $entities_to_save[$entity_key] = [
+            'entity' => $entity,
+            'modified' => FALSE,
+            'count' => 0,
+          ];
+        }
+        
+        // Replace in the specific field
+        if ($field_name === 'title' || $field_name === $entity->getEntityType()->getKey('label')) {
+          $label = $entity->label();
+          $new_label = $this->performReplace($label, $search_term, $replace_term, $use_regex);
+          if ($label !== $new_label) {
+            if (!$dry_run) {
+              $label_key = $entity->getEntityType()->getKey('label');
+              if ($label_key) {
+                $entity->set($label_key, $new_label);
+              }
+            }
+            $entities_to_save[$entity_key]['modified'] = TRUE;
+            $entities_to_save[$entity_key]['count'] += $this->countReplacements($label, $search_term, $use_regex);
+          }
+        }
+        else {
+          // Regular field
+          if ($entity->hasField($field_name)) {
+            $field_values = $entity->get($field_name)->getValue();
+            $field_modified = FALSE;
+            
+            foreach ($field_values as $delta => &$value) {
+              if (isset($value['value'])) {
+                $original = $value['value'];
+                $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+                
+                if ($original !== $new_value) {
+                  if (!$dry_run) {
+                    $value['value'] = $new_value;
+                  }
+                  $field_modified = TRUE;
+                  $entities_to_save[$entity_key]['modified'] = TRUE;
+                  $entities_to_save[$entity_key]['count'] += $this->countReplacements($original, $search_term, $use_regex);
+                }
+              }
+            }
+            
+            if ($field_modified && !$dry_run) {
+              $entity->set($field_name, $field_values);
+            }
+          }
+        }
+      } catch (\Exception $e) {
+        $this->loggerFactory->get('content_radar')->error('Error processing selected item @key: @message', [
+          '@key' => $item_key,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+    
+    // Save all modified entities
+    foreach ($entities_to_save as $entity_data) {
+      if ($entity_data['modified']) {
+        if (!$dry_run) {
+          $entity_data['entity']->save();
+        }
+        $count += $entity_data['count'];
+        $affected_entities[] = [
+          'entity_type' => $entity_data['entity']->getEntityTypeId(),
+          'id' => $entity_data['entity']->id(),
+          'title' => $entity_data['entity']->label(),
+          'type' => $entity_data['entity']->bundle(),
+          'langcode' => $entity_data['entity']->language()->getId(),
+        ];
+      }
+    }
+    
+    return ['count' => $count, 'entities' => $affected_entities];
+  }
+
+  /**
+   * Replace text within a specific entity type.
+   *
+   * @param string $entity_type
+   *   The entity type ID.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param string $langcode
+   *   The language code to replace in.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return array
+   *   Array with 'count' and 'entities' keys.
+   */
+  protected function replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+    $count = 0;
+    $affected_entities = [];
+    
+    try {
+      $storage = $this->entityTypeManager->getStorage($entity_type);
+      
+      // Load all entities of this type
+      $query = $storage->getQuery();
+      if (method_exists($query, 'accessCheck')) {
+        $query->accessCheck(TRUE);
+      }
+      
+      $entity_ids = $query->execute();
+      
+      if (empty($entity_ids)) {
+        return ['count' => 0, 'entities' => []];
+      }
+      
+      $entities = $storage->loadMultiple($entity_ids);
+      
+      foreach ($entities as $entity) {
+        // Handle translatable entities
+        if ($entity->getEntityType()->isTranslatable() && $entity instanceof \Drupal\Core\Entity\TranslatableInterface) {
+          if (!empty($langcode)) {
+            if ($entity->hasTranslation($langcode)) {
+              $translation = $entity->getTranslation($langcode);
+              $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run);
+              if ($result['modified']) {
+                $count += $result['count'];
+                $affected_entities[] = [
+                  'entity_type' => $entity_type,
+                  'id' => $entity->id(),
+                  'title' => $translation->label(),
+                  'type' => $entity->bundle(),
+                  'langcode' => $langcode,
+                ];
+              }
+            }
+          }
+          else {
+            $languages = $entity->getTranslationLanguages();
+            foreach ($languages as $translation_langcode => $language) {
+              $translation = $entity->getTranslation($translation_langcode);
+              $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run);
+              if ($result['modified']) {
+                $count += $result['count'];
+                $affected_entities[] = [
+                  'entity_type' => $entity_type,
+                  'id' => $entity->id(),
+                  'title' => $translation->label(),
+                  'type' => $entity->bundle(),
+                  'langcode' => $translation_langcode,
+                ];
+              }
+            }
+          }
+        }
+        else {
+          // Non-translatable entity
+          $result = $this->replaceInEntity($entity, $search_term, $replace_term, $use_regex, $dry_run);
+          if ($result['modified']) {
+            $count += $result['count'];
+            $affected_entities[] = [
+              'entity_type' => $entity_type,
+              'id' => $entity->id(),
+              'title' => $entity->label(),
+              'type' => $entity->bundle(),
+              'langcode' => 'und',
+            ];
+          }
+        }
+      }
+    } catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error replacing in entity type @type: @message', [
+        '@type' => $entity_type,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return ['count' => $count, 'entities' => $affected_entities];
+  }
+
+  /**
+   * Replace text in an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return array
+   *   Array with 'modified' and 'count' keys.
+   */
+  protected function replaceInEntity(EntityInterface $entity, $search_term, $replace_term, $use_regex, $dry_run) {
+    $count = 0;
+    $entity_modified = FALSE;
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
+    
+    // Replace in label/title field if it exists
+    $label_key = $entity->getEntityType()->getKey('label');
+    if ($label_key && $entity->hasField($label_key)) {
+      $label = $entity->get($label_key)->value;
+      $new_label = $this->performReplace($label, $search_term, $replace_term, $use_regex);
+      if ($label !== $new_label) {
+        if (!$dry_run) {
+          $entity->set($label_key, $new_label);
+        }
+        $entity_modified = TRUE;
+        $count += $this->countReplacements($label, $search_term, $use_regex);
+      }
+    }
+    
+    // Replace in fields
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        continue;
+      }
+      
+      if (!$entity->hasField($field_name)) {
+        continue;
+      }
+      
+      $field_values = $entity->get($field_name)->getValue();
+      $field_modified = FALSE;
+      
+      foreach ($field_values as $delta => &$value) {
+        if (isset($value['value'])) {
+          $original = $value['value'];
+          $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+          
+          if ($original !== $new_value) {
+            if (!$dry_run) {
+              $value['value'] = $new_value;
+            }
+            $field_modified = TRUE;
+            $entity_modified = TRUE;
+            $count += $this->countReplacements($original, $search_term, $use_regex);
+          }
+        }
+      }
+      
+      if ($field_modified && !$dry_run) {
+        $entity->set($field_name, $field_values);
+      }
+    }
+    
+    // Replace in paragraphs if they exist
+    if ($entity->getEntityTypeId() !== 'paragraph' && \Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      $para_result = $this->replaceInEntityParagraphs($entity, $search_term, $replace_term, $use_regex, $dry_run);
+      if ($para_result > 0) {
+        $count += $para_result;
+        $entity_modified = TRUE;
+      }
+    }
+    
+    // Save the entity if modified
+    if ($entity_modified && !$dry_run) {
+      $entity->save();
+    }
+    
+    return ['modified' => $entity_modified, 'count' => $count];
+  }
+
+  /**
+   * Replace text in paragraph fields of an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return int
+   *   Number of replacements made.
+   */
+  protected function replaceInEntityParagraphs(EntityInterface $entity, $search_term, $replace_term, $use_regex, $dry_run) {
+    $count = 0;
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
+    
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if ($field_definition->getType() === 'entity_reference_revisions' && 
+          $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $paragraphs = $entity->get($field_name)->referencedEntities();
+        foreach ($paragraphs as $paragraph) {
+          if ($paragraph) {
+            $count += $this->replaceInParagraphEntity($paragraph, $search_term, $replace_term, $use_regex, $dry_run);
+          }
+        }
+      }
+    }
+    
+    return $count;
+  }
+
+  /**
    * Search for text within a string.
    *
    * @param string $text
@@ -564,26 +939,52 @@ class TextSearchService {
    *   The language code to replace in.
    * @param bool $dry_run
    *   If TRUE, only simulate the replacement without saving.
+   * @param array $entity_types
+   *   Entity types to search in. Empty for all.
+   * @param array $selected_items
+   *   Array of selected items to replace in format ['entity_type:entity_id:field_name' => TRUE].
    *
    * @return array
-   *   Array with 'replaced_count' and 'affected_nodes' keys.
+   *   Array with 'replaced_count' and 'affected_entities' keys.
    */
-  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $content_types = [], $langcode = '', $dry_run = FALSE) {
+  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $content_types = [], $langcode = '', $dry_run = FALSE, array $entity_types = [], array $selected_items = []) {
     $replaced_count = 0;
-    $affected_nodes = [];
+    $affected_entities = [];
     
     try {
-      // Get all node types if none specified.
-      if (empty($content_types)) {
-        $node_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
-        $content_types = array_keys($node_types);
+      // If specific items are selected, process only those
+      if (!empty($selected_items)) {
+        $result = $this->replaceInSelectedItems($selected_items, $search_term, $replace_term, $use_regex, $dry_run);
+        $replaced_count = $result['count'];
+        $affected_entities = $result['entities'];
       }
-      
-      // Process each content type.
-      foreach ($content_types as $content_type) {
-        $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
-        $replaced_count += $result['count'];
-        $affected_nodes = array_merge($affected_nodes, $result['nodes']);
+      else {
+        // If no entity types specified, use all searchable entities
+        if (empty($entity_types)) {
+          $entity_types = $this->getSearchableEntityTypes();
+        }
+        
+        // Process each entity type
+        foreach ($entity_types as $entity_type) {
+          if ($entity_type === 'node') {
+            // For nodes, use the existing logic with content types
+            if (empty($content_types)) {
+              $node_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
+              $content_types = array_keys($node_types);
+            }
+            foreach ($content_types as $content_type) {
+              $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+              $replaced_count += $result['count'];
+              $affected_entities = array_merge($affected_entities, $result['nodes']);
+            }
+          }
+          else {
+            // For other entity types
+            $result = $this->replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+            $replaced_count += $result['count'];
+            $affected_entities = array_merge($affected_entities, $result['entities']);
+          }
+        }
       }
       
     } catch (\Exception $e) {
@@ -593,7 +994,7 @@ class TextSearchService {
     
     return [
       'replaced_count' => $replaced_count,
-      'affected_nodes' => $affected_nodes,
+      'affected_entities' => $affected_entities,
     ];
   }
 
@@ -1189,6 +1590,7 @@ class TextSearchService {
     
     $csv = [];
     $csv[] = [
+      'Entity Type',
       'Content Type',
       'ID',
       'Title',
@@ -1202,16 +1604,26 @@ class TextSearchService {
     
     foreach ($results['items'] as $item) {
       $entity = $item['entity'];
+      $url = '';
+      try {
+        if ($entity->hasLinkTemplate('canonical')) {
+          $url = $entity->toUrl('canonical', ['absolute' => TRUE])->toString();
+        }
+      } catch (\Exception $e) {
+        // Some entities may not have URLs
+      }
+      
       $csv[] = [
+        $item['entity_type'],
         $item['content_type'],
         $item['id'],
         $item['title'],
         isset($item['language']) ? $item['language'] : 'Unknown',
         $item['field_label'],
         strip_tags($item['extract']),
-        $item['status'] ? 'Published' : 'Unpublished',
-        is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i:s') : date('Y-m-d H:i:s', $item['changed']),
-        $entity->toUrl('canonical', ['absolute' => TRUE])->toString(),
+        isset($item['status']) ? ($item['status'] ? 'Published' : 'Unpublished') : 'N/A',
+        isset($item['changed']) ? (is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i:s') : date('Y-m-d H:i:s', $item['changed'])) : 'N/A',
+        $url,
       ];
     }
     
@@ -1225,6 +1637,368 @@ class TextSearchService {
     fclose($handle);
     
     return $output;
+  }
+
+  /**
+   * Get all searchable entity types.
+   *
+   * @return array
+   *   Array of entity type IDs.
+   */
+  protected function getSearchableEntityTypes() {
+    $entity_types = [];
+    $definitions = $this->entityTypeManager->getDefinitions();
+    
+    // List of entity types we want to search
+    $searchable_types = [
+      'node',
+      'block_content',
+      'taxonomy_term',
+      'user',
+      'media',
+      'paragraph',
+      'menu_link_content',
+      'comment',
+    ];
+    
+    foreach ($searchable_types as $entity_type_id) {
+      if (isset($definitions[$entity_type_id])) {
+        $entity_types[] = $entity_type_id;
+      }
+    }
+    
+    // Allow other modules to alter the list
+    \Drupal::moduleHandler()->alter('content_radar_searchable_entity_types', $entity_types);
+    
+    return $entity_types;
+  }
+
+  /**
+   * Search within a specific entity type.
+   *
+   * @param string $entity_type
+   *   The entity type ID.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param string $langcode
+   *   The language code to search in.
+   *
+   * @return array
+   *   Array of results.
+   */
+  protected function searchEntityType($entity_type, $search_term, $use_regex, $langcode = '') {
+    $results = [];
+    
+    try {
+      $storage = $this->entityTypeManager->getStorage($entity_type);
+      $entity_definition = $this->entityTypeManager->getDefinition($entity_type);
+      
+      // Load all entities of this type
+      $query = $storage->getQuery();
+      
+      // Add access check
+      if (method_exists($query, 'accessCheck')) {
+        $query->accessCheck(TRUE);
+      }
+      
+      $entity_ids = $query->execute();
+      
+      if (empty($entity_ids)) {
+        return $results;
+      }
+      
+      $entities = $storage->loadMultiple($entity_ids);
+      
+      foreach ($entities as $entity) {
+        // Handle translatable entities
+        if ($entity->getEntityType()->isTranslatable() && $entity instanceof \Drupal\Core\Entity\TranslatableInterface) {
+          if (!empty($langcode)) {
+            if ($entity->hasTranslation($langcode)) {
+              $entity = $entity->getTranslation($langcode);
+              $this->searchEntity($entity, $search_term, $use_regex, $results);
+            }
+          }
+          else {
+            $languages = $entity->getTranslationLanguages();
+            foreach ($languages as $translation_langcode => $language) {
+              $translation = $entity->getTranslation($translation_langcode);
+              $this->searchEntity($translation, $search_term, $use_regex, $results);
+            }
+          }
+        }
+        else {
+          // Non-translatable entity
+          $this->searchEntity($entity, $search_term, $use_regex, $results);
+        }
+      }
+    } catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error searching entity type @type: @message', [
+        '@type' => $entity_type,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return $results;
+  }
+
+  /**
+   * Search within an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param array &$results
+   *   Results array to append to.
+   */
+  protected function searchEntity(EntityInterface $entity, $search_term, $use_regex, array &$results) {
+    $entity_type_id = $entity->getEntityTypeId();
+    $bundle = $entity->bundle();
+    
+    // Get field definitions for this entity
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity_type_id, $bundle);
+    
+    // Search in label/title field if it exists
+    $label_key = $entity->getEntityType()->getKey('label');
+    if ($label_key && $entity->hasField($label_key)) {
+      $label = $entity->get($label_key)->value;
+      $matches = $this->searchInText($label, $search_term, $use_regex);
+      if (!empty($matches)) {
+        foreach ($matches as $match) {
+          $results[] = $this->createEntityResultItem($entity, $label_key, $this->t('Title'), $match);
+        }
+      }
+    }
+    
+    // Search in fields
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        continue;
+      }
+      
+      if (!$entity->hasField($field_name)) {
+        continue;
+      }
+      
+      $field_values = $entity->get($field_name)->getValue();
+      foreach ($field_values as $delta => $value) {
+        $text = $value['value'] ?? '';
+        if (empty($text)) {
+          continue;
+        }
+        
+        $matches = $this->searchInText($text, $search_term, $use_regex);
+        if (!empty($matches)) {
+          foreach ($matches as $match) {
+            $results[] = $this->createEntityResultItem($entity, $field_name, $field_definition->getLabel(), $match);
+          }
+        }
+      }
+    }
+    
+    // For paragraphs within entities
+    if ($entity_type_id !== 'paragraph') {
+      $this->searchEntityParagraphs($entity, $search_term, $use_regex, $results);
+    }
+  }
+
+  /**
+   * Search within paragraph fields of an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param array &$results
+   *   Results array to append to.
+   */
+  protected function searchEntityParagraphs(EntityInterface $entity, $search_term, $use_regex, array &$results) {
+    if (!\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      return;
+    }
+    
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
+    
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if ($field_definition->getType() === 'entity_reference_revisions' && 
+          $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $paragraphs = $entity->get($field_name)->referencedEntities();
+        foreach ($paragraphs as $paragraph) {
+          if ($paragraph) {
+            $this->searchParagraphEntityGeneric($paragraph, $entity, $search_term, $use_regex, $results);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Search within a paragraph entity (generic for any parent entity).
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $paragraph
+   *   The paragraph entity.
+   * @param \Drupal\Core\Entity\EntityInterface $parent_entity
+   *   The parent entity.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param array &$results
+   *   Results array to append to.
+   * @param string $parent_label
+   *   Parent label for nested paragraphs.
+   */
+  protected function searchParagraphEntityGeneric(EntityInterface $paragraph, EntityInterface $parent_entity, $search_term, $use_regex, array &$results, $parent_label = '') {
+    $paragraph_fields = $this->entityFieldManager->getFieldDefinitions('paragraph', $paragraph->bundle());
+    
+    // Get paragraph type label
+    $para_type_label = $this->t('Paragraph');
+    if ($paragraph->getEntityType() && $paragraph->bundle()) {
+      $para_bundle_entity = $this->entityTypeManager
+        ->getStorage('paragraphs_type')
+        ->load($paragraph->bundle());
+      if ($para_bundle_entity) {
+        $para_type_label = $para_bundle_entity->label();
+      }
+    }
+    
+    // Build full label path
+    $current_label = $parent_label ? $parent_label . ' > ' . $para_type_label : $para_type_label;
+    
+    foreach ($paragraph_fields as $field_name => $field_definition) {
+      // Check for text fields
+      if (in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        if (!$paragraph->hasField($field_name)) {
+          continue;
+        }
+        
+        $field_values = $paragraph->get($field_name)->getValue();
+        foreach ($field_values as $value) {
+          $text = $value['value'] ?? '';
+          if (empty($text)) {
+            continue;
+          }
+          
+          $matches = $this->searchInText($text, $search_term, $use_regex);
+          if (!empty($matches)) {
+            foreach ($matches as $match) {
+              $field_label = $this->t('@para_type > @field', [
+                '@para_type' => $current_label,
+                '@field' => $field_definition->getLabel(),
+              ]);
+              $results[] = $this->createEntityResultItem($parent_entity, $field_name, $field_label, $match);
+            }
+          }
+        }
+      }
+      // Check for nested paragraphs
+      elseif ($field_definition->getType() === 'entity_reference_revisions' && 
+              $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$paragraph->hasField($field_name) || $paragraph->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $nested_paragraphs = $paragraph->get($field_name)->referencedEntities();
+        foreach ($nested_paragraphs as $nested_paragraph) {
+          if ($nested_paragraph) {
+            // Recursive call for nested paragraphs
+            $this->searchParagraphEntityGeneric($nested_paragraph, $parent_entity, $search_term, $use_regex, $results, $current_label);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Create a result item for any entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $field_name
+   *   The field name.
+   * @param string $field_label
+   *   The field label.
+   * @param array $match
+   *   The match details.
+   *
+   * @return array
+   *   The result item.
+   */
+  protected function createEntityResultItem(EntityInterface $entity, $field_name, $field_label, array $match) {
+    $entity_type = $entity->getEntityType();
+    $entity_type_label = $entity_type->getLabel();
+    $bundle = $entity->bundle();
+    
+    // Get bundle label
+    $bundle_label = $bundle;
+    if ($entity_type->getBundleEntityType()) {
+      $bundle_entity = $this->entityTypeManager
+        ->getStorage($entity_type->getBundleEntityType())
+        ->load($bundle);
+      if ($bundle_entity) {
+        $bundle_label = $bundle_entity->label();
+      }
+    }
+    
+    // Get entity label
+    $label = $entity->label() ?: $this->t('Untitled');
+    
+    // Get language information
+    $langcode = 'und';
+    $language_name = $this->t('Language neutral');
+    if ($entity instanceof \Drupal\Core\Entity\EntityInterface && method_exists($entity, 'language')) {
+      $language = $entity->language();
+      $langcode = $language->getId();
+      $language_name = $language->getName();
+    }
+    
+    // Get changed time if available
+    $changed = NULL;
+    if ($entity->hasField('changed')) {
+      $changed = $entity->get('changed')->value;
+    }
+    elseif (method_exists($entity, 'getChangedTime')) {
+      $changed = $entity->getChangedTime();
+    }
+    elseif (method_exists($entity, 'getChangedTimeAcrossTranslations')) {
+      $changed = $entity->getChangedTimeAcrossTranslations();
+    }
+    
+    // Get published status if available
+    $status = NULL;
+    if ($entity->hasField('status')) {
+      $status = $entity->get('status')->value;
+    }
+    elseif (method_exists($entity, 'isPublished')) {
+      $status = $entity->isPublished();
+    }
+    
+    return [
+      'entity' => $entity,
+      'entity_type' => $entity_type->id(),
+      'content_type' => $bundle_label,
+      'id' => $entity->id(),
+      'title' => $label,
+      'field_name' => $field_name,
+      'field_label' => $field_label,
+      'extract' => $match['extract'],
+      'status' => $status,
+      'changed' => $changed,
+      'langcode' => $langcode,
+      'language' => $language_name,
+    ];
   }
 
 }

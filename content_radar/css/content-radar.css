@@ -785,3 +785,172 @@
 .form-checkboxes.node-checkboxes .form-item:last-child {
   border-bottom: none;
 }
+
+/* Entity type badge styles */
+.entity-type-badge {
+  display: inline-block;
+  background-color: #6c757d;
+  color: #fff;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  margin-right: 0.25rem;
+}
+
+.entity-type-badge.node {
+  background-color: #007bff;
+}
+
+.entity-type-badge.block_content {
+  background-color: #6f42c1;
+}
+
+.entity-type-badge.taxonomy_term {
+  background-color: #28a745;
+}
+
+.entity-type-badge.user {
+  background-color: #fd7e14;
+}
+
+.entity-type-badge.media {
+  background-color: #e83e8c;
+}
+
+.entity-type-badge.paragraph {
+  background-color: #20c997;
+}
+
+.entity-type-badge.menu_link_content {
+  background-color: #6610f2;
+}
+
+.entity-type-badge.comment {
+  background-color: #ffc107;
+  color: #212529;
+}
+
+/* Report table styles */
+.content-radar-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.content-radar-report-table th {
+  background-color: #f8f9fa;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #e0e0e0;
+  font-size: 0.875rem;
+  color: #495057;
+}
+
+.content-radar-report-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #dee2e6;
+  vertical-align: top;
+}
+
+.content-radar-report-table tr:hover {
+  background-color: #f8f9fa;
+}
+
+.content-radar-report-table small {
+  color: #6c757d;
+  font-size: 0.8em;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+/* Report summary styles */
+.report-summary {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.report-summary h2 {
+  margin-top: 0;
+  color: #495057;
+  border-bottom: 2px solid #dee2e6;
+  padding-bottom: 0.5rem;
+}
+
+.report-summary dl {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.report-summary dt {
+  font-weight: 600;
+  color: #6c757d;
+  margin: 0;
+}
+
+.report-summary dd {
+  margin: 0;
+  color: #495057;
+}
+
+.report-summary code {
+  background-color: #e9ecef;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  color: #d63384;
+}
+
+/* Report actions */
+.report-actions {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 2px solid #dee2e6;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .report-summary dl {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  
+  .report-summary dt {
+    margin-top: 1rem;
+  }
+  
+  .report-summary dt:first-child {
+    margin-top: 0;
+  }
+  
+  .content-radar-report-table {
+    font-size: 0.875rem;
+  }
+  
+  .content-radar-report-table th,
+  .content-radar-report-table td {
+    padding: 0.5rem;
+  }
+  
+  .report-actions {
+    flex-direction: column;
+  }
+  
+  .report-actions .button {
+    width: 100%;
+    text-align: center;
+  }
+}
