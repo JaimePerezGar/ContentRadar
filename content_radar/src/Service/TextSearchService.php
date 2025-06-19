@@ -235,7 +235,7 @@ class TextSearchService {
     $title_matches = $this->searchInText($node->getTitle(), $search_term, $use_regex);
     if (!empty($title_matches)) {
       foreach ($title_matches as $match) {
-        $results[] = $this->createResultItem($node, 'title', $this->t('Title'), $match);
+        $results[] = $this->createEntityResultItem($node, 'title', $this->t('Title'), $match);
       }
     }
     
@@ -259,7 +259,7 @@ class TextSearchService {
         $matches = $this->searchInText($text, $search_term, $use_regex);
         if (!empty($matches)) {
           foreach ($matches as $match) {
-            $results[] = $this->createResultItem($node, $field_name, $field_definition->getLabel(), $match);
+            $results[] = $this->createEntityResultItem($node, $field_name, $field_definition->getLabel(), $match);
           }
         }
       }
@@ -359,7 +359,7 @@ class TextSearchService {
                 '@para_type' => $current_label,
                 '@field' => $field_definition->getLabel(),
               ]);
-              $results[] = $this->createResultItem($node, $field_name, $field_label, $match);
+              $results[] = $this->createEntityResultItem($parent_entity, $field_name, $field_label, $match);
             }
           }
         }

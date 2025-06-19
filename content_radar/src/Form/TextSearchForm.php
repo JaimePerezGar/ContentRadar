@@ -302,7 +302,8 @@ class TextSearchForm extends FormBase {
       $grouped_results = [];
       if ($results['total'] > 0 && !empty($results['items'])) {
         foreach ($results['items'] as $index => $item) {
-          $entity_type = $item['entity_type'];
+          // Get entity type with fallback for backward compatibility
+          $entity_type = isset($item['entity_type']) ? $item['entity_type'] : 'node';
           $entity_type_label = $this->getEntityTypeLabel($entity_type);
           
           if (!isset($grouped_results[$entity_type_label])) {
@@ -632,10 +633,12 @@ class TextSearchForm extends FormBase {
       // Collect unique entities from search results
       $entities_to_process = [];
       foreach ($results['items'] as $item) {
-        $entity_key = $item['entity_type'] . ':' . $item['id'] . ':' . $item['langcode'];
+        // Get entity type with fallback for backward compatibility
+        $entity_type = isset($item['entity_type']) ? $item['entity_type'] : 'node';
+        $entity_key = $entity_type . ':' . $item['id'] . ':' . $item['langcode'];
         if (!isset($entities_to_process[$entity_key])) {
           $entities_to_process[$entity_key] = [
-            'entity_type' => $item['entity_type'],
+            'entity_type' => $entity_type,
             'entity_id' => $item['id'],
             'title' => $item['title'],
             'langcode' => $item['langcode'],
