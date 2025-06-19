@@ -81,16 +81,81 @@ class SimpleUndoForm extends FormBase {
     $form_state->set('report', $report);
     $form_state->set('rid', $rid);
 
+    // Add CSS and JavaScript.
+    $form['#attached']['library'][] = 'content_radar/undo-form';
+
     $form['info'] = [
       '#markup' => '<div class="messages messages--warning">' .
                    '<strong>' . $this->t('Undo Operation') . '</strong><br>' .
-                   $this->t('This will search for "@search" and replace it with "@replace" in all affected nodes.', [
+                   $this->t('This will search for "@search" and replace it with "@replace" in selected nodes.', [
                      '@search' => $report->replace_term,
                      '@replace' => $report->search_term,
-                   ]) . '<br>' .
-                   $this->t('<strong>Total nodes to process:</strong> @count', ['@count' => $report->nodes_affected]) .
-                   '</div>',
+                   ]) . '</div>',
     ];
+
+    // Get nodes from report details.
+    $details = unserialize($report->details);
+    
+    if (!empty($details)) {
+      $form['nodes'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Select nodes to revert'),
+        '#open' => TRUE,
+      ];
+
+      // Add select all checkbox.
+      $form['nodes']['select_all'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Select all nodes'),
+        '#attributes' => ['class' => ['select-all-nodes']],
+      ];
+
+      $form['nodes']['node_list'] = [
+        '#type' => 'checkboxes',
+        '#title' => $this->t('Nodes'),
+        '#title_display' => 'invisible',
+        '#options' => [],
+        '#default_value' => [],
+        '#attributes' => ['class' => ['node-checkboxes']],
+      ];
+
+      $node_storage = $this->entityTypeManager->getStorage('node');
+      
+      foreach ($details as $key => $node_data) {
+        if (!is_numeric($key) || !isset($node_data['nid'])) {
+          continue;
+        }
+        
+        $node = $node_storage->load($node_data['nid']);
+        if ($node) {
+          // Check if the replace term still exists in the node.
+          $preview = $this->getNodePreview($node, $report->replace_term, $report->langcode);
+          
+          $label = $this->t('@title (Node @nid, @type)', [
+            '@title' => $node->getTitle(),
+            '@nid' => $node->id(),
+            '@type' => $node->bundle(),
+          ]);
+          
+          if ($preview['found']) {
+            $label .= ' - ' . $this->t('<span class="color-success">✓ @count occurrences found</span>', [
+              '@count' => $preview['count'],
+            ]);
+            $form['nodes']['node_list']['#default_value'][] = $node_data['nid'];
+          } else {
+            $label .= ' - ' . $this->t('<span class="color-warning">⚠ No occurrences found</span>');
+          }
+          
+          $form['nodes']['node_list']['#options'][$node_data['nid']] = $label;
+        }
+      }
+      
+      if (empty($form['nodes']['node_list']['#options'])) {
+        $form['nodes']['empty'] = [
+          '#markup' => '<p>' . $this->t('No nodes found in the report.') . '</p>',
+        ];
+      }
+    }
 
     $form['confirm'] = [
       '#type' => 'checkbox',
@@ -119,29 +184,68 @@ class SimpleUndoForm extends FormBase {
   }
 
   /**
+   * Check if node contains the search term.
+   */
+  protected function getNodePreview($node, $search_term, $langcode) {
+    $count = 0;
+    
+    // Get appropriate translation.
+    if (!empty($langcode) && $node->hasTranslation($langcode)) {
+      $node = $node->getTranslation($langcode);
+    }
+    
+    // Check title.
+    $title = $node->getTitle();
+    if (stripos($title, $search_term) !== FALSE) {
+      $count += substr_count(strtolower($title), strtolower($search_term));
+    }
+    
+    // Check fields.
+    $field_definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', $node->bundle());
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (in_array($field_definition->getType(), ['string', 'string_long', 'text', 'text_long', 'text_with_summary'])) {
+        if ($node->hasField($field_name) && !$node->get($field_name)->isEmpty()) {
+          $field_values = $node->get($field_name)->getValue();
+          foreach ($field_values as $value) {
+            if (isset($value['value']) && stripos($value['value'], $search_term) !== FALSE) {
+              $count += substr_count(strtolower($value['value']), strtolower($search_term));
+            }
+          }
+        }
+      }
+    }
+    
+    return [
+      'found' => $count > 0,
+      'count' => $count,
+    ];
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $report = $form_state->get('report');
     $rid = $form_state->get('rid');
     
-    // Get nodes from report details.
-    $details = unserialize($report->details);
+    // Get selected nodes.
+    $selected_nodes = array_filter($form_state->getValue('node_list', []));
+    
+    if (empty($selected_nodes)) {
+      $this->messenger()->addError($this->t('Please select at least one node to revert.'));
+      return;
+    }
     
     $total_replacements = 0;
     $nodes_modified = 0;
     $errors = [];
+    $modified_nodes = [];
     
-    if (!empty($details)) {
-      foreach ($details as $key => $node_data) {
-        if (!is_numeric($key) || !isset($node_data['nid'])) {
-          continue;
-        }
-        
+    foreach ($selected_nodes as $nid) {
         try {
-          $node = $this->entityTypeManager->getStorage('node')->load($node_data['nid']);
+          $node = $this->entityTypeManager->getStorage('node')->load($nid);
           if (!$node) {
-            $errors[] = $this->t('Node @nid not found.', ['@nid' => $node_data['nid']]);
+            $errors[] = $this->t('Node @nid not found.', ['@nid' => $nid]);
             continue;
           }
           
@@ -181,16 +285,22 @@ class SimpleUndoForm extends FormBase {
             if ($count > 0) {
               $nodes_modified++;
               $total_replacements += $count;
+              $modified_nodes[$nid] = [
+                'nid' => $nid,
+                'title' => $node->getTitle(),
+                'type' => $node->bundle(),
+                'langcode' => $node->language()->getId(),
+                'count' => $count,
+              ];
             }
           }
           
         } catch (\Exception $e) {
           $errors[] = $this->t('Error processing node @nid: @error', [
-            '@nid' => $node_data['nid'],
+            '@nid' => $nid,
             '@error' => $e->getMessage(),
           ]);
         }
-      }
     }
     
     // Show results.
@@ -202,6 +312,9 @@ class SimpleUndoForm extends FormBase {
       
       // Save undo report.
       try {
+        $details = $modified_nodes;
+        $details['undone_from'] = $rid;
+        
         $undo_rid = $this->database->insert('content_radar_reports')
           ->fields([
             'uid' => \Drupal::currentUser()->id(),
@@ -212,7 +325,7 @@ class SimpleUndoForm extends FormBase {
             'langcode' => $report->langcode ?: '',
             'total_replacements' => $total_replacements,
             'nodes_affected' => $nodes_modified,
-            'details' => serialize(['undone_from' => $rid]),
+            'details' => serialize($details),
           ])
           ->execute();
           
