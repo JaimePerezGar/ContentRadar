@@ -1,0 +1,5 @@
+content_radar.search_tab:
+  route_name: content_radar.search
+  title: 'Content Radar'
+  base_route: system.admin_content
+  weight: 100

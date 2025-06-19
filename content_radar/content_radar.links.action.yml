@@ -1,0 +1,5 @@
+content_radar.search_action:
+  route_name: content_radar.search
+  title: 'Search with Content Radar'
+  appears_on:
+    - system.admin_content
