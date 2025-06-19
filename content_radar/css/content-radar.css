@@ -330,6 +330,8 @@
   color: #cc0000;
   cursor: pointer;
   padding: 0.75rem;
+  padding-right: 2.5rem; /* Add space for the arrow */
+  position: relative;
 }
 
 .content-radar-replace-container[open] summary {
@@ -361,7 +363,184 @@
   border-color: #bd2130;
 }
 
-/* Table View Fallback */
+/* Table View */
+.results-table-wrapper {
+  overflow-x: auto;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+
+.content-radar-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.content-radar-table th {
+  background-color: #f5f7fa;
+  padding: 1rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #e0e0e0;
+  font-size: 0.875rem;
+  color: #333;
+  white-space: nowrap;
+}
+
+.content-radar-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.content-radar-table tr:hover {
+  background-color: #f8f9fa;
+}
+
+.content-radar-table tr.unpublished {
+  opacity: 0.8;
+  background-color: #fff8f8;
+}
+
+/* Table cell specific styles */
+.content-type-cell {
+  font-weight: 500;
+  color: #666;
+}
+
+.id-cell {
+  color: #999;
+  font-size: 0.875rem;
+}
+
+.title-cell a {
+  color: #1976d2;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.title-cell a:hover {
+  text-decoration: underline;
+}
+
+.language-cell {
+  font-size: 0.875rem;
+}
+
+.field-cell {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.extract-cell {
+  max-width: 400px;
+}
+
+.extract-content {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background-color: #f8f9fa;
+  padding: 0.5rem;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extract-content mark {
+  background-color: #fff59d;
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+  font-weight: 600;
+  color: #000;
+}
+
+.usage-info {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.usage-info .usage-link {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.usage-info .usage-link:hover {
+  text-decoration: underline;
+}
+
+.status-cell {
+  text-align: center;
+}
+
+.status-indicator {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-indicator.published {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-indicator.unpublished {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.date-cell {
+  font-size: 0.875rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.actions-cell {
+  white-space: nowrap;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.action-link.view-link {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.action-link.view-link:hover {
+  background-color: #bbdefb;
+}
+
+.action-link.edit-link {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.action-link.edit-link:hover {
+  background-color: #c8e6c9;
+}
+
+/* Table View Fallback (old styles kept for compatibility) */
 .content-radar-results-table {
   width: 100%;
   border-collapse: collapse;
