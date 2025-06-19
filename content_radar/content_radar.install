@@ -1,0 +1,84 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the ContentRadar module.
+ */
+
+use Drupal\Core\Database\Database;
+
+/**
+ * Implements hook_schema().
+ */
+function content_radar_schema() {
+  $schema['content_radar_log'] = [
+    'description' => 'Stores search queries performed by administrators.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique search log ID.',
+      ],
+      'uid' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {users}.uid of the user who performed the search.',
+      ],
+      'search_term' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'The search term used.',
+      ],
+      'use_regex' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Whether regular expressions were used.',
+      ],
+      'content_types' => [
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => 'Serialized array of content types searched.',
+      ],
+      'results_count' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Number of results found.',
+      ],
+      'timestamp' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp of when the search was performed.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'uid' => ['uid'],
+      'timestamp' => ['timestamp'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function content_radar_install() {
+  \Drupal::messenger()->addStatus(t('ContentRadar module has been installed successfully.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function content_radar_uninstall() {
+  // Clean up any cached search results.
+  \Drupal::cache()->deleteAll();
+  
+  \Drupal::messenger()->addStatus(t('ContentRadar module has been uninstalled successfully.'));
+}

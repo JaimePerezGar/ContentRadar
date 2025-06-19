@@ -1,0 +1,53 @@
+<?php
+
+/**
+ * @file
+ * ContentRadar module file.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function content_radar_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.content_radar':
+      $output = '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The ContentRadar module provides an advanced search and analysis tool for administrators to find, analyze and manage content across all text fields.') . '</p>';
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Search across all text fields in content') . '</li>';
+      $output .= '<li>' . t('Support for regular expressions') . '</li>';
+      $output .= '<li>' . t('Context display with highlighted matches') . '</li>';
+      $output .= '<li>' . t('Direct links to view and edit content') . '</li>';
+      $output .= '<li>' . t('Export results to CSV') . '</li>';
+      $output .= '</ul>';
+      return $output;
+
+    case 'content_radar.search':
+      return '<p>' . t('Search for text across all content fields. You can use regular expressions by enabling the checkbox.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function content_radar_theme($existing, $type, $theme, $path) {
+  return [
+    'content_radar_results' => [
+      'variables' => [
+        'results' => [],
+        'grouped_results' => [],
+        'pager' => [],
+        'total' => 0,
+        'search_term' => '',
+        'is_regex' => FALSE,
+        'langcode' => '',
+        'export_url' => NULL,
+      ],
+      'template' => 'content-radar-results',
+      'path' => $path . '/templates',
+    ],
+  ];
+}

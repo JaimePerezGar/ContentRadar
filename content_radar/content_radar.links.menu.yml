@@ -1,0 +1,6 @@
+content_radar.search:
+  title: 'ContentRadar'
+  route_name: content_radar.search
+  parent: system.admin_content
+  description: 'Search and analyze content across all fields.'
+  weight: 50

@@ -1,0 +1,4 @@
+services:
+  content_radar.search_service:
+    class: Drupal\content_radar\Service\TextSearchService
+    arguments: ['@entity_type.manager', '@entity_field.manager', '@database', '@logger.factory']

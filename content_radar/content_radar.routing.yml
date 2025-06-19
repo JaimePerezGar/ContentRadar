@@ -1,0 +1,18 @@
+content_radar.search:
+  path: '/admin/content/content-radar'
+  defaults:
+    _form: '\Drupal\content_radar\Form\TextSearchForm'
+    _title: 'ContentRadar'
+  requirements:
+    _permission: 'use content radar'
+  options:
+    _admin_route: TRUE
+
+content_radar.export:
+  path: '/admin/content/content-radar/export'
+  defaults:
+    _controller: '\Drupal\content_radar\Controller\TextSearchController::exportResults'
+  requirements:
+    _permission: 'use content radar'
+  options:
+    _admin_route: TRUE

@@ -1,0 +1,10 @@
+name: 'ContentRadar'
+type: module
+description: 'Advanced content search and analysis tool for administrators to find, analyze and manage content across all text fields with multilingual support.'
+package: Content Management
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:field
+  - drupal:node
+  - drupal:user
+  - drupal:system

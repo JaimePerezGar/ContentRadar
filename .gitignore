@@ -1,0 +1,35 @@
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Composer
+/vendor/
+composer.lock
+
+# Drupal
+/sites/*/files
+/sites/*/private
+/sites/*/settings*.php
+/sites/*/services*.yml
+
+# Testing
+/tests/coverage/
+.phpunit.result.cache
+
+# Build artifacts
+*.patch
+*.diff
+
+# Backup files
+*.bak
+*.orig
+
+# Log files
+*.log

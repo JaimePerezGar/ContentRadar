@@ -1,0 +1,34 @@
+{
+  "name": "jaimeperezgar/content_radar",
+  "type": "drupal-module",
+  "description": "Advanced content search and analysis tool for Drupal administrators",
+  "keywords": [
+    "Drupal",
+    "Search",
+    "Content",
+    "Multilingual",
+    "Administration"
+  ],
+  "homepage": "https://github.com/JaimePerezGar/ContentRadar",
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Jaime Pérez García",
+      "homepage": "https://github.com/JaimePerezGar",
+      "role": "Maintainer"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/JaimePerezGar/ContentRadar/issues",
+    "source": "https://github.com/JaimePerezGar/ContentRadar"
+  },
+  "require": {
+    "php": ">=7.4",
+    "drupal/core": "^10 || ^11"
+  },
+  "suggest": {
+    "drupal/paragraphs": "For searching within paragraph fields"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}

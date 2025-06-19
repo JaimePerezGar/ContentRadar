@@ -1,0 +1,10 @@
+use content radar:
+  title: 'Use ContentRadar'
+  description: 'Allows users to use the advanced content search and analysis tool for administrators.'
+  restrict access: true
+
+replace content radar:
+  title: 'Replace text with ContentRadar'
+  description: 'Allows users to find and replace text across content. Warning: This is a powerful permission that can modify content.'
+  restrict access: true
+  warning: 'This permission allows users to modify content in bulk. Grant with caution.'

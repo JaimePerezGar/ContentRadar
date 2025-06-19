@@ -1,0 +1,130 @@
+{#
+/**
+ * @file
+ * Default theme implementation for ContentRadar results.
+ *
+ * Available variables:
+ * - results: Array of search results.
+ * - pager: The pager element.
+ * - total: Total number of results.
+ * - search_term: The search term used.
+ * - is_regex: Whether regex was used.
+ * - langcode: The language code searched.
+ * - grouped_results: Results grouped by content type.
+ *
+ * @ingroup themeable
+ */
+#}
+<div class="content-radar-results">
+  {% if total > 0 %}
+    <div class="results-header">
+      <div class="results-summary">
+        <h3>
+          <span class="results-icon">🔍</span>
+          {{ 'Found @count matches for'|t({'@count': total}) }} 
+          <strong>"{{ search_term }}"</strong>
+        </h3>
+        {% if langcode %}
+          <span class="language-badge">{{ 'Language: @lang'|t({'@lang': langcode}) }}</span>
+        {% endif %}
+        {% if is_regex %}
+          <span class="regex-badge">{{ 'RegEx'|t }}</span>
+        {% endif %}
+      </div>
+      
+      <div class="results-actions">
+        {% if export_url %}
+          <a href="{{ export_url }}" class="button button--small button--secondary" target="_blank">
+            <span class="button-icon">📥</span> {{ 'Export CSV'|t }}
+          </a>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="results-content">
+      {% if grouped_results %}
+        {% for content_type, items in grouped_results %}
+          <div class="results-group">
+            <h4 class="results-group-title">
+              <span class="content-type-icon">📄</span>
+              {{ content_type }} 
+              <span class="results-count">({{ items|length }})</span>
+            </h4>
+            
+            <div class="results-cards">
+              {% for item in items %}
+                <div class="result-card {{ item.status ? '' : 'unpublished' }}">
+                  <div class="result-card-header">
+                    <h5 class="result-title">
+                      <a href="{{ item.view_url }}" target="_blank">{{ item.title }}</a>
+                      {% if not item.status %}
+                        <span class="status-badge unpublished">{{ 'Unpublished'|t }}</span>
+                      {% endif %}
+                    </h5>
+                    <div class="result-meta">
+                      <span class="result-id">#{{ item.id }}</span>
+                      {% if item.language %}
+                        <span class="result-language">{{ item.language }}</span>
+                      {% endif %}
+                      <span class="result-date">{{ item.changed }}</span>
+                    </div>
+                  </div>
+                  
+                  <div class="result-card-body">
+                    <div class="result-field">
+                      <span class="field-label">{{ 'Field:'|t }}</span>
+                      <span class="field-value">{{ item.field_label }}</span>
+                    </div>
+                    
+                    <div class="result-extract">
+                      {{ item.extract|raw }}
+                    </div>
+                    
+                    {% if item.usage and item.usage is not empty %}
+                      <div class="result-usage">
+                        <span class="usage-label">{{ 'Used in:'|t }}</span>
+                        <div class="usage-links">
+                          {% for usage in item.usage %}
+                            <a href="{{ usage.url }}" target="_blank" class="usage-link">{{ usage.title }}</a>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    {% endif %}
+                  </div>
+                  
+                  <div class="result-card-footer">
+                    <a href="{{ item.view_url }}" class="button button--tiny" target="_blank">
+                      <span class="button-icon">👁️</span> {{ 'View'|t }}
+                    </a>
+                    {% if item.edit_url %}
+                      <a href="{{ item.edit_url }}" class="button button--tiny button--primary" target="_blank">
+                        <span class="button-icon">✏️</span> {{ 'Edit'|t }}
+                      </a>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="results-table-wrapper">
+          {{ results }}
+        </div>
+      {% endif %}
+    </div>
+    
+    <div class="results-footer">
+      {{ pager }}
+    </div>
+  {% else %}
+    <div class="no-results">
+      <div class="no-results-icon">🔍❌</div>
+      <h3>{{ 'No results found'|t }}</h3>
+      <p>{{ 'No matches found for "@term"'|t({'@term': search_term}) }}</p>
+      {% if is_regex %}
+        <p class="help-text">{{ 'Check your regular expression syntax and try again.'|t }}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
