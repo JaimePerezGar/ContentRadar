@@ -8,4 +8,3 @@ search:
   dependencies:
     - core/jquery
     - core/drupal
-    - core/drupal.dropbutton

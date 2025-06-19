@@ -193,28 +193,6 @@ class TextSearchForm extends FormBase {
         '#placeholder' => $this->t('Enter replacement text...'),
       ];
       
-      // Show preview results if available
-      $preview_results = $form_state->get('preview_results');
-      if ($preview_results && !empty($preview_results['replaced_count'])) {
-        $form['replace_container']['preview_results'] = [
-          '#prefix' => '<div class="replace-preview-results">',
-          '#suffix' => '</div>',
-          '#markup' => '<h4>' . $this->t('Preview Results') . '</h4>' .
-            '<p class="preview-summary">' . $this->formatPlural(
-              $preview_results['replaced_count'],
-              'Found 1 occurrence that will be replaced in @node_count content item.',
-              'Found @count occurrences that will be replaced in @node_count content items.',
-              ['@node_count' => count($preview_results['affected_nodes'])]
-            ) . '</p>' .
-            '<div class="affected-content"><strong>' . $this->t('Affected content:') . '</strong><ul>' .
-            implode('', array_map(function($node) {
-              return '<li>' . $node['title'] . ' (' . $node['type'] . ' - ' . $node['langcode'] . ')</li>';
-            }, array_slice($preview_results['affected_nodes'], 0, 10))) .
-            (count($preview_results['affected_nodes']) > 10 ? '<li>... ' . $this->t('and @count more', ['@count' => count($preview_results['affected_nodes']) - 10]) . '</li>' : '') .
-            '</ul></div>',
-        ];
-      }
-      
       $form['replace_container']['replace_confirm'] = [
         '#type' => 'checkbox',
         '#title' => $this->t('I understand this will modify content'),
@@ -241,23 +219,12 @@ class TextSearchForm extends FormBase {
       '#button_type' => 'primary',
     ];
     
-    // Only show replace buttons if we have search results
+    // Only show replace button if we have search results
     $results = $form_state->get('results');
     if ($this->currentUser->hasPermission('replace content radar') && $results && $results['total'] > 0) {
-      $form['actions']['preview_replace'] = [
-        '#type' => 'submit',
-        '#value' => $this->t('Preview Replace'),
-        '#submit' => ['::previewReplace'],
-        '#states' => [
-          'visible' => [
-            ':input[name="replace_term"]' => ['filled' => TRUE],
-          ],
-        ],
-      ];
-      
       $form['actions']['replace'] = [
         '#type' => 'submit',
-        '#value' => $this->t('Apply Replace'),
+        '#value' => $this->t('Replace All'),
         '#button_type' => 'danger',
         '#submit' => ['::replaceSubmit'],
         '#states' => [
@@ -482,7 +449,6 @@ class TextSearchForm extends FormBase {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
     $use_regex = $form_state->getValue('use_regex');
-    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
     $langcode = $form_state->getValue('langcode', '');
     
     if (!$form_state->getValue('replace_confirm')) {
@@ -491,21 +457,29 @@ class TextSearchForm extends FormBase {
       return;
     }
     
-    // First do a dry run to get all affected nodes.
-    try {
-      $preview_result = $this->textSearchService->replaceText($search_term, $replace_term, $use_regex, $content_types, $langcode, TRUE);
-      
-      if (empty($preview_result['affected_nodes'])) {
-        $this->messenger()->addWarning($this->t('No content found to replace.'));
-        return;
+    // Get the current search results.
+    $results = $form_state->get('results');
+    if (!$results || empty($results['items'])) {
+      $this->messenger()->addWarning($this->t('No search results found. Please search first.'));
+      return;
+    }
+    
+    // Collect unique nodes from search results.
+    $nodes_to_process = [];
+    foreach ($results['items'] as $item) {
+      $nid = $item['id'];
+      if (!isset($nodes_to_process[$nid])) {
+        $nodes_to_process[$nid] = [
+          'nid' => $nid,
+          'title' => $item['title'],
+          'type' => $item['entity']->bundle(),
+          'langcode' => $item['langcode'],
+        ];
       }
-      
-      $nodes_to_process = [];
-      foreach ($preview_result['affected_nodes'] as $node_info) {
-        $nodes_to_process[$node_info['nid']] = $node_info;
-      }
-    } catch (\Exception $e) {
-      $this->messenger()->addError($this->t('Error finding content to replace: @message', ['@message' => $e->getMessage()]));
+    }
+    
+    if (empty($nodes_to_process)) {
+      $this->messenger()->addWarning($this->t('No content to process.'));
       return;
     }
     
@@ -519,12 +493,11 @@ class TextSearchForm extends FormBase {
       'error_message' => $this->t('An error occurred during processing.'),
     ];
     
-    // Split nodes into chunks for batch processing.
-    $chunks = array_chunk($nodes_to_process, 10, TRUE);
-    foreach ($chunks as $chunk) {
+    // Process each node individually for better progress feedback.
+    foreach ($nodes_to_process as $nid => $node_info) {
       $batch['operations'][] = [
-        '\Drupal\content_radar\Form\TextSearchForm::batchProcess',
-        [$chunk, $search_term, $replace_term, $use_regex, $langcode],
+        '\Drupal\content_radar\Form\TextSearchForm::batchProcessSingle',
+        [$nid, $search_term, $replace_term, $use_regex, $langcode],
       ];
     }
     
@@ -535,7 +508,7 @@ class TextSearchForm extends FormBase {
     $session->set('content_radar_search_params', [
       'search_term' => $search_term,
       'use_regex' => $use_regex,
-      'content_types' => $content_types,
+      'content_types' => array_filter($form_state->getValue(['content_types_container', 'content_types'], [])),
       'langcode' => $langcode,
     ]);
   }
@@ -580,6 +553,63 @@ class TextSearchForm extends FormBase {
 
     $form_state->set('results', $results);
     $form_state->setRebuild();
+  }
+
+  /**
+   * Batch process callback for single node replacement.
+   */
+  public static function batchProcessSingle($nid, $search_term, $replace_term, $use_regex, $langcode, &$context) {
+    // Initialize results in context.
+    if (!isset($context['results']['replaced_count'])) {
+      $context['results']['replaced_count'] = 0;
+      $context['results']['processed_nodes'] = 0;
+      $context['results']['errors'] = [];
+    }
+    
+    $text_search_service = \Drupal::service('content_radar.search_service');
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    
+    try {
+      $node = $node_storage->load($nid);
+      if (!$node) {
+        $context['results']['errors'][] = t('Node @nid not found.', ['@nid' => $nid]);
+        return;
+      }
+      
+      $count = 0;
+      
+      // If specific language requested and node has that translation.
+      if (!empty($langcode) && $node->hasTranslation($langcode)) {
+        $translation = $node->getTranslation($langcode);
+        $count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
+        if ($count > 0) {
+          $translation->save();
+        }
+      }
+      // If no specific language, process the default translation.
+      else {
+        $count = $text_search_service->replaceInNode($node, $search_term, $replace_term, $use_regex);
+        if ($count > 0) {
+          $node->save();
+        }
+      }
+      
+      if ($count > 0) {
+        $context['results']['replaced_count'] += $count;
+        $context['message'] = t('Replaced @count occurrences in: @title', [
+          '@count' => $count,
+          '@title' => $node->getTitle()
+        ]);
+      }
+      
+      $context['results']['processed_nodes']++;
+      
+    } catch (\Exception $e) {
+      $context['results']['errors'][] = t('Error processing node @nid: @error', [
+        '@nid' => $nid,
+        '@error' => $e->getMessage(),
+      ]);
+    }
   }
 
   /**
