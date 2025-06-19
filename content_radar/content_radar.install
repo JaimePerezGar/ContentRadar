@@ -140,6 +140,16 @@ function content_radar_schema() {
  * Implements hook_install().
  */
 function content_radar_install() {
+  // Ensure the schema is created
+  $schema = content_radar_schema();
+  $database = \Drupal::database();
+  
+  foreach ($schema as $table_name => $table_schema) {
+    if (!$database->schema()->tableExists($table_name)) {
+      $database->schema()->createTable($table_name, $table_schema);
+    }
+  }
+  
   \Drupal::messenger()->addStatus(t('ContentRadar module has been installed successfully.'));
 }
 

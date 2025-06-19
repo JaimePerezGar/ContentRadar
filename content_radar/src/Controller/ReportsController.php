@@ -66,6 +66,20 @@ class ReportsController extends ControllerBase {
       '#markup' => '<p>' . $this->t('This page shows all text replacement operations performed by Content Radar.') . '</p>',
     ];
 
+    // Check if the table exists
+    if (!$this->database->schema()->tableExists('content_radar_reports')) {
+      $this->messenger()->addError($this->t('The reports table has not been created yet. Please run database updates.'));
+      $build['error'] = [
+        '#markup' => '<p>' . $this->t('To fix this issue:') . '</p>' .
+                     '<ol>' .
+                     '<li>' . $this->t('Run <code>drush updb</code> in your terminal') . '</li>' .
+                     '<li>' . $this->t('Or visit <a href="@url">the update page</a>', ['@url' => '/update.php']) . '</li>' .
+                     '<li>' . $this->t('Clear caches after running updates') . '</li>' .
+                     '</ol>',
+      ];
+      return $build;
+    }
+
     // Get reports from database.
     $query = $this->database->select('content_radar_reports', 'r')
       ->fields('r')
