@@ -17,3 +17,12 @@ undo-form:
     - core/jquery
     - core/drupal
     - core/once
+
+undo-page:
+  version: 1.x
+  js:
+    js/undo-page.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
+    - core/once

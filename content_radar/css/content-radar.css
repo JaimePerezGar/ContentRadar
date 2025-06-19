@@ -726,3 +726,32 @@
       .5em 0 0 #666;
   }
 }
+
+/* Undo page styles */
+.content-radar-undo-table .preview-samples {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: 0.85em;
+}
+
+.content-radar-undo-table .preview-samples li {
+  margin-bottom: 5px;
+  padding: 5px;
+  background: #f9f9f9;
+  border-left: 3px solid #ddd;
+}
+
+.content-radar-undo-table .color-success {
+  color: #5cb85c;
+}
+
+.content-radar-undo-table .color-warning {
+  color: #f0ad4e;
+}
+
+.content-radar-undo-table mark {
+  background-color: #ffeb3b;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
