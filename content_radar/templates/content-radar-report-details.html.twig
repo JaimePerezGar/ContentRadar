@@ -79,5 +79,8 @@
   <div class="report-actions">
     <a href="{{ back_url }}" class="button">{{ '← Back to reports'|t }}</a>
     <a href="{{ export_url }}" class="button button--small">{{ 'Export CSV'|t }}</a>
+    {% if show_undo %}
+      <a href="{{ undo_url }}" class="button button--danger use-ajax" data-dialog-type="modal" data-dialog-options='{"width":700}'>{{ 'Undo replacements'|t }}</a>
+    {% endif %}
   </div>
 </div>

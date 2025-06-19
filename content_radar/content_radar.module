@@ -56,6 +56,8 @@ function content_radar_theme($existing, $type, $theme, $path) {
         'details' => [],
         'back_url' => NULL,
         'export_url' => NULL,
+        'show_undo' => FALSE,
+        'undo_url' => NULL,
       ],
       'template' => 'content-radar-report-details',
       'path' => $path . '/templates',

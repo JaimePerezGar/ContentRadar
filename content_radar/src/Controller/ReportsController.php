@@ -128,6 +128,39 @@ class ReportsController extends ControllerBase {
         Url::fromRoute('content_radar.report_export', ['rid' => $report->rid])
       );
 
+      // Check if this is an undo operation.
+      $is_undo = FALSE;
+      $details = @unserialize($report->details);
+      if ($details && isset($details['undone_from'])) {
+        $is_undo = TRUE;
+      }
+
+      $operations = [
+        'view' => [
+          'title' => $this->t('View details'),
+          'url' => Url::fromRoute('content_radar.report_details', ['rid' => $report->rid]),
+        ],
+        'export' => [
+          'title' => $this->t('Export CSV'),
+          'url' => Url::fromRoute('content_radar.report_export', ['rid' => $report->rid]),
+        ],
+      ];
+
+      // Add undo link if user has permission and this is not already an undo operation.
+      if ($this->currentUser()->hasPermission('replace content radar') && !$is_undo) {
+        $operations['undo'] = [
+          'title' => $this->t('Undo'),
+          'url' => Url::fromRoute('content_radar.report_undo', ['rid' => $report->rid]),
+          'attributes' => [
+            'class' => ['use-ajax'],
+            'data-dialog-type' => 'modal',
+            'data-dialog-options' => json_encode([
+              'width' => 700,
+            ]),
+          ],
+        ];
+      }
+
       $rows[] = [
         $this->dateFormatter->format($report->created, 'short'),
         $username,
@@ -139,16 +172,7 @@ class ReportsController extends ControllerBase {
         [
           'data' => [
             '#type' => 'operations',
-            '#links' => [
-              'view' => [
-                'title' => $this->t('View details'),
-                'url' => Url::fromRoute('content_radar.report_details', ['rid' => $report->rid]),
-              ],
-              'export' => [
-                'title' => $this->t('Export CSV'),
-                'url' => Url::fromRoute('content_radar.report_export', ['rid' => $report->rid]),
-              ],
-            ],
+            '#links' => $operations,
           ],
         ],
       ];
@@ -224,6 +248,13 @@ class ReportsController extends ControllerBase {
       }
     }
 
+    // Check if this is an undo operation.
+    $is_undo = FALSE;
+    $details_raw = unserialize($report->details);
+    if ($details_raw && isset($details_raw['undone_from'])) {
+      $is_undo = TRUE;
+    }
+
     return [
       '#theme' => 'content_radar_report_details',
       '#report' => $report,
@@ -231,6 +262,8 @@ class ReportsController extends ControllerBase {
       '#details' => $details_data,
       '#back_url' => Url::fromRoute('content_radar.reports')->toString(),
       '#export_url' => Url::fromRoute('content_radar.report_export', ['rid' => $rid])->toString(),
+      '#show_undo' => $this->currentUser()->hasPermission('replace content radar') && !$is_undo,
+      '#undo_url' => Url::fromRoute('content_radar.report_undo', ['rid' => $rid])->toString(),
     ];
   }
 

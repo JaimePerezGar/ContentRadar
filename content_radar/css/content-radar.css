@@ -672,6 +672,31 @@
   color: #666;
 }
 
+/* Undo button styles */
+.button--danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: #fff;
+}
+
+.button--danger:hover,
+.button--danger:focus {
+  background-color: #c82333;
+  border-color: #bd2130;
+  color: #fff;
+}
+
+/* Report actions */
+.report-actions {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ddd;
+}
+
+.report-actions .button {
+  margin-right: 10px;
+}
+
 .content-radar-loading::after {
   content: '...';
   animation: dots 1.5s steps(4, end) infinite;

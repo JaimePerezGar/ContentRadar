@@ -48,3 +48,14 @@ content_radar.report_export:
     rid: '\d+'
   options:
     _admin_route: TRUE
+
+content_radar.report_undo:
+  path: '/admin/reports/content-radar/{rid}/undo'
+  defaults:
+    _form: '\Drupal\content_radar\Form\UndoReportForm'
+    _title: 'Undo Replacements'
+  requirements:
+    _permission: 'replace content radar'
+    rid: '\d+'
+  options:
+    _admin_route: TRUE
