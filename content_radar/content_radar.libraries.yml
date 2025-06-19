@@ -8,3 +8,12 @@ search:
   dependencies:
     - core/jquery
     - core/drupal
+
+undo-form:
+  version: 1.x
+  js:
+    js/undo-form.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
+    - core/once

@@ -9,6 +9,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\content_radar\Service\TextSearchService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountInterface;
 
@@ -37,6 +38,13 @@ class UndoReportForm extends ConfirmFormBase {
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
   protected $entityTypeManager;
+
+  /**
+   * The entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  protected $entityFieldManager;
 
   /**
    * The current user.
@@ -68,13 +76,16 @@ class UndoReportForm extends ConfirmFormBase {
    *   The text search service.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
+   *   The entity field manager.
    * @param \Drupal\Core\Session\AccountInterface $current_user
    *   The current user.
    */
-  public function __construct(Connection $database, TextSearchService $text_search_service, EntityTypeManagerInterface $entity_type_manager, AccountInterface $current_user) {
+  public function __construct(Connection $database, TextSearchService $text_search_service, EntityTypeManagerInterface $entity_type_manager, EntityFieldManagerInterface $entity_field_manager, AccountInterface $current_user) {
     $this->database = $database;
     $this->textSearchService = $text_search_service;
     $this->entityTypeManager = $entity_type_manager;
+    $this->entityFieldManager = $entity_field_manager;
     $this->currentUser = $current_user;
   }
 
@@ -86,6 +97,7 @@ class UndoReportForm extends ConfirmFormBase {
       $container->get('database'),
       $container->get('content_radar.search_service'),
       $container->get('entity_type.manager'),
+      $container->get('entity_field.manager'),
       $container->get('current_user')
     );
   }
@@ -174,38 +186,140 @@ class UndoReportForm extends ConfirmFormBase {
                    $this->t('This operation will modify content. Make sure you have a backup before proceeding.'),
     ];
 
+    // Add information about the undo operation.
+    $form['info'] = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['messages', 'messages--info']],
+      '#weight' => -9,
+    ];
+
+    $form['info']['message'] = [
+      '#markup' => $this->t('This will search for <strong>"@search"</strong> and replace it with <strong>"@replace"</strong> to revert the original operation.', [
+        '@search' => $this->report->replace_term,
+        '@replace' => $this->report->search_term,
+      ]),
+    ];
+
     // Add details about what will be undone.
     $form['details'] = [
       '#type' => 'details',
-      '#title' => $this->t('Affected content'),
+      '#title' => $this->t('Select content to revert'),
       '#open' => TRUE,
       '#weight' => -5,
     ];
 
     $details = unserialize($this->report->details);
     if (!empty($details)) {
-      $items = [];
-      foreach ($details as $node_data) {
-        $items[] = $this->t('@title (Node @nid, @count replacements)', [
-          '@title' => $node_data['title'],
-          '@nid' => $node_data['nid'],
-          '@count' => $node_data['count'],
-        ]);
-      }
+      // Add select all checkbox.
+      $form['details']['select_all'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Select all'),
+        '#default_value' => TRUE,
+        '#attributes' => [
+          'class' => ['select-all-nodes'],
+        ],
+      ];
 
       $form['details']['nodes'] = [
-        '#theme' => 'item_list',
-        '#items' => $items,
+        '#type' => 'checkboxes',
+        '#title' => $this->t('Nodes to revert'),
+        '#title_display' => 'invisible',
+        '#options' => [],
+        '#default_value' => [],
+        '#attributes' => [
+          'class' => ['node-checkboxes'],
+        ],
       ];
+
+      $node_storage = $this->entityTypeManager->getStorage('node');
+      
+      foreach ($details as $nid => $node_data) {
+        // Skip if this is metadata.
+        if (!is_numeric($nid)) {
+          continue;
+        }
+        
+        // Load node to check current content.
+        $node = $node_storage->load($node_data['nid']);
+        if ($node) {
+          // Check if the replace term still exists in the node.
+          $preview_text = $this->getPreviewText($node, $this->report->replace_term, $this->report->langcode);
+          
+          $option_text = $this->t('@title (Node @nid)', [
+            '@title' => $node_data['title'],
+            '@nid' => $node_data['nid'],
+          ]);
+          
+          if ($preview_text) {
+            $option_text .= ' - ' . $this->t('Found @count occurrences', ['@count' => $preview_text['count']]);
+          } else {
+            $option_text .= ' - <em>' . $this->t('No occurrences found (may have been modified)') . '</em>';
+          }
+          
+          $form['details']['nodes']['#options'][$node_data['nid']] = $option_text;
+          
+          // Default to checked only if text is found.
+          if ($preview_text && $preview_text['count'] > 0) {
+            $form['details']['nodes']['#default_value'][] = $node_data['nid'];
+          }
+        }
+      }
+
+      // Add JavaScript for select all functionality.
+      $form['#attached']['library'][] = 'content_radar/undo-form';
     }
 
     return $form;
   }
 
   /**
+   * Get preview text showing what will be reverted.
+   */
+  protected function getPreviewText($node, $search_term, $langcode) {
+    $count = 0;
+    $preview = [];
+    
+    // Get the appropriate translation.
+    if (!empty($langcode) && $node->hasTranslation($langcode)) {
+      $node = $node->getTranslation($langcode);
+    }
+    
+    // Check title.
+    $title = $node->getTitle();
+    if (stripos($title, $search_term) !== FALSE) {
+      $count += substr_count(strtolower($title), strtolower($search_term));
+    }
+    
+    // Check fields.
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (in_array($field_definition->getType(), ['string', 'string_long', 'text', 'text_long', 'text_with_summary'])) {
+        if ($node->hasField($field_name) && !$node->get($field_name)->isEmpty()) {
+          $field_values = $node->get($field_name)->getValue();
+          foreach ($field_values as $value) {
+            if (isset($value['value']) && stripos($value['value'], $search_term) !== FALSE) {
+              $count += substr_count(strtolower($value['value']), strtolower($search_term));
+            }
+          }
+        }
+      }
+    }
+    
+    return $count > 0 ? ['count' => $count] : NULL;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
+    // Get selected nodes.
+    $selected_nodes = array_filter($form_state->getValue('nodes', []));
+    
+    if (empty($selected_nodes)) {
+      $this->messenger()->addError($this->t('Please select at least one node to revert.'));
+      return;
+    }
+    
     // Set up batch operation for undo.
     $batch = [
       'title' => $this->t('Undoing text replacements'),
@@ -219,18 +333,32 @@ class UndoReportForm extends ConfirmFormBase {
     // Get the details of nodes to process.
     $details = unserialize($this->report->details);
     if (!empty($details)) {
-      foreach ($details as $node_data) {
-        $batch['operations'][] = [
-          '\Drupal\content_radar\Form\UndoReportForm::batchProcessUndo',
-          [
-            $node_data['nid'],
-            $this->report->replace_term, // This becomes the search term
-            $this->report->search_term,  // This becomes the replace term (reverting)
-            $this->report->use_regex,
-            $this->report->langcode,
-            $this->rid,
-          ],
-        ];
+      foreach ($selected_nodes as $nid) {
+        if (isset($details[$nid])) {
+          $node_data = $details[$nid];
+        } else {
+          // Try to find the node data.
+          foreach ($details as $key => $data) {
+            if (is_array($data) && isset($data['nid']) && $data['nid'] == $nid) {
+              $node_data = $data;
+              break;
+            }
+          }
+        }
+        
+        if (isset($node_data)) {
+          $batch['operations'][] = [
+            '\Drupal\content_radar\Form\UndoReportForm::batchProcessUndo',
+            [
+              $nid,
+              $this->report->replace_term, // This becomes the search term
+              $this->report->search_term,  // This becomes the replace term (reverting)
+              $this->report->use_regex,
+              $this->report->langcode,
+              $this->rid,
+            ],
+          ];
+        }
       }
     }
 
@@ -244,6 +372,8 @@ class UndoReportForm extends ConfirmFormBase {
       'replace_term' => $this->report->replace_term,
       'use_regex' => $this->report->use_regex,
       'langcode' => $this->report->langcode,
+      'selected_nodes' => count($selected_nodes),
+      'total_nodes' => count($details),
     ]);
   }
 
@@ -277,41 +407,76 @@ class UndoReportForm extends ConfirmFormBase {
       $count = 0;
       $node_modified = FALSE;
 
-      \Drupal::logger('content_radar')->debug('Undoing replacements in node @nid. Replacing "@search" with "@replace"', [
+      \Drupal::logger('content_radar')->notice('UNDO: Processing node @nid. Searching for "@search" to replace with "@replace". Language: "@lang"', [
         '@nid' => $nid,
         '@search' => $search_term,
         '@replace' => $replace_term,
+        '@lang' => $langcode ?: 'all',
+      ]);
+
+      // First, let's check if the search term exists in the node
+      $preview_count = 0;
+      if (!empty($langcode) && $node->hasTranslation($langcode)) {
+        $check_node = $node->getTranslation($langcode);
+      } else {
+        $check_node = $node;
+      }
+      
+      // Check title
+      $title = $check_node->getTitle();
+      if (stripos($title, $search_term) !== FALSE) {
+        $preview_count += substr_count(strtolower($title), strtolower($search_term));
+      }
+      
+      \Drupal::logger('content_radar')->debug('UNDO: Found @count occurrences of "@search" in node @nid before replacement', [
+        '@count' => $preview_count,
+        '@search' => $search_term,
+        '@nid' => $nid,
       ]);
 
       // Process based on language.
       if (!empty($langcode) && $node->hasTranslation($langcode)) {
         $translation = $node->getTranslation($langcode);
+        \Drupal::logger('content_radar')->debug('UNDO: Processing specific language translation: @lang', ['@lang' => $langcode]);
+        
         $count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
         if ($count > 0) {
           $translation->save();
           $node_modified = TRUE;
+          \Drupal::logger('content_radar')->notice('UNDO: Successfully replaced @count occurrences in node @nid (@lang)', [
+            '@count' => $count,
+            '@nid' => $nid,
+            '@lang' => $langcode,
+          ]);
+        } else {
+          \Drupal::logger('content_radar')->warning('UNDO: No replacements made in node @nid (@lang)', [
+            '@nid' => $nid,
+            '@lang' => $langcode,
+          ]);
         }
       }
       elseif (empty($langcode)) {
-        // Process default language first
-        $default_lang = $node->language()->getId();
-        $count = $text_search_service->replaceInNode($node, $search_term, $replace_term, $use_regex);
-        if ($count > 0) {
-          $node->save();
-          $node_modified = TRUE;
-        }
-
-        // Process other translations
+        // Process all translations
+        \Drupal::logger('content_radar')->debug('UNDO: Processing all languages');
+        
         foreach ($node->getTranslationLanguages() as $lang_code => $language) {
-          if ($lang_code != $default_lang) {
-            $translation = $node->getTranslation($lang_code);
-            $translation_count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
-            if ($translation_count > 0) {
-              $translation->save();
-              $count += $translation_count;
-              $node_modified = TRUE;
-            }
+          $translation = $node->getTranslation($lang_code);
+          $translation_count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
+          
+          if ($translation_count > 0) {
+            $translation->save();
+            $count += $translation_count;
+            $node_modified = TRUE;
+            \Drupal::logger('content_radar')->notice('UNDO: Replaced @count occurrences in node @nid (@lang)', [
+              '@count' => $translation_count,
+              '@nid' => $nid,
+              '@lang' => $lang_code,
+            ]);
           }
+        }
+        
+        if ($count == 0) {
+          \Drupal::logger('content_radar')->warning('UNDO: No replacements made in any language for node @nid', ['@nid' => $nid]);
         }
       }
 
@@ -352,14 +517,29 @@ class UndoReportForm extends ConfirmFormBase {
     
     if ($success) {
       if (!empty($results['replaced_count'])) {
-        $messenger->addStatus(\Drupal::translation()->formatPlural(
+        // Get session data for additional info
+        $session = \Drupal::request()->getSession();
+        $undo_info = $session->get('content_radar_undo_report');
+        
+        $message = \Drupal::translation()->formatPlural(
           $results['replaced_count'],
           'Successfully reverted 1 replacement in @node_count content items.',
           'Successfully reverted @count replacements in @node_count content items.',
           [
             '@node_count' => $results['processed_nodes'],
           ]
-        ));
+        );
+        
+        if ($undo_info && isset($undo_info['selected_nodes']) && isset($undo_info['total_nodes'])) {
+          if ($undo_info['selected_nodes'] < $undo_info['total_nodes']) {
+            $message .= ' ' . t('(@selected of @total nodes were selected for reverting)', [
+              '@selected' => $undo_info['selected_nodes'],
+              '@total' => $undo_info['total_nodes'],
+            ]);
+          }
+        }
+        
+        $messenger->addStatus($message);
 
         // Save the undo operation as a new report.
         try {
