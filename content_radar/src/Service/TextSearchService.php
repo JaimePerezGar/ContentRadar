@@ -121,6 +121,10 @@ class TextSearchService {
             $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
           }
         }
+        elseif ($entity_type === 'paragraph') {
+          // For paragraphs, search within entities that contain paragraphs
+          $results = array_merge($results, $this->searchParagraphsAcrossEntities($search_term, $use_regex, $langcode));
+        }
         else {
           // For all entity types (including nodes when no content types specified)
           $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode));
@@ -973,6 +977,12 @@ class TextSearchService {
               $replaced_count += $result['count'];
               $affected_entities = array_merge($affected_entities, $result['nodes']);
             }
+          }
+          elseif ($entity_type === 'paragraph') {
+            // For paragraphs, replace within entities that contain paragraphs
+            $result = $this->replaceInParagraphsAcrossEntities($search_term, $replace_term, $use_regex, $langcode, $dry_run);
+            $replaced_count += $result['count'];
+            $affected_entities = array_merge($affected_entities, $result['entities']);
           }
           else {
             // For other entity types
@@ -1911,6 +1921,274 @@ class TextSearchService {
           if ($nested_paragraph) {
             // Recursive call for nested paragraphs
             $this->searchParagraphEntityGeneric($nested_paragraph, $parent_entity, $search_term, $use_regex, $results, $current_label);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Search for paragraphs across all entities that contain them.
+   *
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param string $langcode
+   *   The language code to search in.
+   *
+   * @return array
+   *   Array of results.
+   */
+  protected function searchParagraphsAcrossEntities($search_term, $use_regex, $langcode = '') {
+    $results = [];
+    
+    // Check if paragraphs module is enabled
+    if (!\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      return $results;
+    }
+    
+    try {
+      // Get all entity types that can contain paragraph fields
+      $entity_types_with_paragraphs = ['node']; // Start with nodes, could expand
+      
+      foreach ($entity_types_with_paragraphs as $entity_type_id) {
+        $storage = $this->entityTypeManager->getStorage($entity_type_id);
+        
+        // Load all entities of this type
+        $query = $storage->getQuery();
+        if (method_exists($query, 'accessCheck')) {
+          $query->accessCheck(TRUE);
+        }
+        
+        $entity_ids = $query->execute();
+        
+        if (empty($entity_ids)) {
+          continue;
+        }
+        
+        $entities = $storage->loadMultiple($entity_ids);
+        
+        foreach ($entities as $entity) {
+          // Handle translatable entities
+          if ($entity->getEntityType()->isTranslatable() && $entity instanceof \Drupal\Core\Entity\TranslatableInterface) {
+            if (!empty($langcode)) {
+              if ($entity->hasTranslation($langcode)) {
+                $entity = $entity->getTranslation($langcode);
+                $this->searchEntityForParagraphsOnly($entity, $search_term, $use_regex, $results);
+              }
+            }
+            else {
+              $languages = $entity->getTranslationLanguages();
+              foreach ($languages as $translation_langcode => $language) {
+                $translation = $entity->getTranslation($translation_langcode);
+                $this->searchEntityForParagraphsOnly($translation, $search_term, $use_regex, $results);
+              }
+            }
+          }
+          else {
+            // Non-translatable entity
+            $this->searchEntityForParagraphsOnly($entity, $search_term, $use_regex, $results);
+          }
+        }
+      }
+    } catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error searching paragraphs across entities: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return $results;
+  }
+
+  /**
+   * Replace text in paragraphs across all entities that contain them.
+   *
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param string $langcode
+   *   The language code to replace in.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return array
+   *   Array with 'count' and 'entities' keys.
+   */
+  protected function replaceInParagraphsAcrossEntities($search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+    $count = 0;
+    $affected_entities = [];
+    
+    // Check if paragraphs module is enabled
+    if (!\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      return ['count' => 0, 'entities' => []];
+    }
+    
+    try {
+      // Get all entity types that can contain paragraph fields
+      $entity_types_with_paragraphs = ['node']; // Start with nodes, could expand
+      
+      foreach ($entity_types_with_paragraphs as $entity_type_id) {
+        $storage = $this->entityTypeManager->getStorage($entity_type_id);
+        
+        // Load all entities of this type
+        $query = $storage->getQuery();
+        if (method_exists($query, 'accessCheck')) {
+          $query->accessCheck(TRUE);
+        }
+        
+        $entity_ids = $query->execute();
+        
+        if (empty($entity_ids)) {
+          continue;
+        }
+        
+        $entities = $storage->loadMultiple($entity_ids);
+        
+        foreach ($entities as $entity) {
+          $entity_changed = false;
+          $entity_count = 0;
+          
+          // Handle translatable entities
+          if ($entity->getEntityType()->isTranslatable() && $entity instanceof \Drupal\Core\Entity\TranslatableInterface) {
+            if (!empty($langcode)) {
+              if ($entity->hasTranslation($langcode)) {
+                $translation = $entity->getTranslation($langcode);
+                $result = $this->replaceInEntityParagraphsOnly($translation, $search_term, $replace_term, $use_regex, $dry_run);
+                if ($result > 0) {
+                  $entity_count += $result;
+                  $entity_changed = true;
+                }
+              }
+            }
+            else {
+              $languages = $entity->getTranslationLanguages();
+              foreach ($languages as $translation_langcode => $language) {
+                $translation = $entity->getTranslation($translation_langcode);
+                $result = $this->replaceInEntityParagraphsOnly($translation, $search_term, $replace_term, $use_regex, $dry_run);
+                if ($result > 0) {
+                  $entity_count += $result;
+                  $entity_changed = true;
+                }
+              }
+            }
+          }
+          else {
+            // Non-translatable entity
+            $result = $this->replaceInEntityParagraphsOnly($entity, $search_term, $replace_term, $use_regex, $dry_run);
+            if ($result > 0) {
+              $entity_count += $result;
+              $entity_changed = true;
+            }
+          }
+          
+          if ($entity_changed) {
+            $count += $entity_count;
+            $affected_entities[] = [
+              'entity_type' => $entity_type_id,
+              'id' => $entity->id(),
+              'title' => $entity->label(),
+              'type' => $entity->bundle(),
+              'langcode' => $entity->language()->getId(),
+            ];
+          }
+        }
+      }
+    } catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error replacing in paragraphs across entities: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return ['count' => $count, 'entities' => $affected_entities];
+  }
+
+  /**
+   * Replace text only in paragraph fields within an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param bool $dry_run
+   *   If TRUE, only simulate the replacement.
+   *
+   * @return int
+   *   Number of replacements made.
+   */
+  protected function replaceInEntityParagraphsOnly(EntityInterface $entity, $search_term, $replace_term, $use_regex, $dry_run) {
+    $count = 0;
+    
+    if (!\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      return $count;
+    }
+    
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
+    
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if ($field_definition->getType() === 'entity_reference_revisions' && 
+          $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $paragraphs = $entity->get($field_name)->referencedEntities();
+        foreach ($paragraphs as $paragraph) {
+          if ($paragraph) {
+            $result = $this->replaceInParagraphEntity($paragraph, $search_term, $replace_term, $use_regex, $dry_run);
+            $count += $result;
+          }
+        }
+      }
+    }
+    
+    // Save the entity if modified and not a dry run
+    if ($count > 0 && !$dry_run) {
+      $entity->save();
+    }
+    
+    return $count;
+  }
+
+  /**
+   * Search only paragraph fields within an entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   * @param array &$results
+   *   Results array to append to.
+   */
+  protected function searchEntityForParagraphsOnly(EntityInterface $entity, $search_term, $use_regex, array &$results) {
+    if (!\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      return;
+    }
+    
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
+    
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if ($field_definition->getType() === 'entity_reference_revisions' && 
+          $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $paragraphs = $entity->get($field_name)->referencedEntities();
+        foreach ($paragraphs as $paragraph) {
+          if ($paragraph) {
+            $this->searchParagraphEntityGeneric($paragraph, $entity, $search_term, $use_regex, $results);
           }
         }
       }
