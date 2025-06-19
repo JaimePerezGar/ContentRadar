@@ -343,34 +343,162 @@
 
 /* Replace functionality styles */
 .content-radar-replace-container {
-  background-color: #fff5f5;
-  border: 1px solid #ffcccc;
-  border-radius: 4px;
-  margin: 1rem 0;
-  padding: 1rem;
+  background-color: #fffbf0;
+  border: 2px solid #ffa500;
+  border-radius: 8px;
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  position: relative;
 }
 
 .content-radar-replace-container legend {
   font-weight: bold;
-  color: #cc0000;
-  padding: 0 0.5rem;
-  font-size: 1.1rem;
+  color: #ff6b00;
+  padding: 0 0.75rem;
+  font-size: 1.2rem;
+  background-color: #fffbf0;
 }
 
-.content-radar-replace-container .form-item {
+.content-radar-replace-container .description {
+  font-style: italic;
+  color: #666;
   margin-bottom: 1rem;
 }
 
-.form-item-replace-confirm {
-  background-color: #ffeeee;
-  padding: 0.75rem;
-  border-radius: 4px;
+.replace-workflow-info {
+  background-color: #f0f8ff;
+  border: 1px solid #b0d4f1;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.8;
+}
+
+.replace-workflow-info strong {
+  color: #0066cc;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.replace-input-wrapper {
+  background-color: #fff;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
   margin: 1rem 0;
 }
 
-.form-item-replace-confirm .description {
-  color: #990000;
+.replace-input-wrapper input {
+  width: 100%;
+  font-size: 1.1rem;
+}
+
+.replace-preview-results {
+  background-color: #e8f5e9;
+  border: 2px solid #4caf50;
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.replace-preview-results h4 {
+  color: #2e7d32;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.preview-summary {
+  font-size: 1.1rem;
+  color: #1b5e20;
+  margin-bottom: 1rem;
+}
+
+.affected-content {
+  background-color: #fff;
+  padding: 1rem;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.affected-content ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.affected-content li {
+  margin: 0.25rem 0;
+  color: #333;
+}
+
+.replace-confirm-wrapper {
+  background-color: #fff3cd;
+  border: 2px solid #ffc107;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.replace-confirm-wrapper .form-item {
+  margin: 0;
+}
+
+.form-item-replace-confirm label {
   font-weight: bold;
+  color: #856404;
+}
+
+.form-item-replace-confirm .description {
+  color: #cc0000;
+  font-weight: normal;
+  font-style: normal;
+  margin-top: 0.5rem;
+}
+
+/* Replace buttons styling */
+.preview-button {
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.preview-button:hover {
+  background-color: #1976d2;
+}
+
+.replace-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.replace-button:hover {
+  background-color: #d32f2f;
+}
+
+.clear-preview-button {
+  background-color: #757575;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.clear-preview-button:hover {
+  background-color: #616161;
 }
 
 /* Danger button styles */

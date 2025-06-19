@@ -166,33 +166,59 @@ class TextSearchForm extends FormBase {
     if ($this->currentUser->hasPermission('replace content radar')) {
       $form['replace_container'] = [
         '#type' => 'fieldset',
-        '#title' => $this->t('Find and Replace'),
+        '#title' => $this->t('🔄 Find and Replace (Optional)'),
         '#attributes' => ['class' => ['content-radar-replace-container']],
+        '#description' => $this->t('Replace text across your content. This is a powerful feature - use with caution.'),
+      ];
+      
+      $form['replace_container']['replace_info'] = [
+        '#markup' => '<div class="replace-workflow-info">' . 
+          $this->t('<strong>How it works:</strong><br>1️⃣ Enter search term above<br>2️⃣ Enter replacement text below<br>3️⃣ Click "Preview Changes" to see what will be replaced<br>4️⃣ Review changes carefully<br>5️⃣ Click "Apply Replace" to make changes') . 
+          '</div>',
       ];
       
       $form['replace_container']['replace_term'] = [
         '#type' => 'textfield',
         '#title' => $this->t('Replace with'),
-        '#description' => $this->t('Enter the text to replace matches with. Leave empty to only search.'),
+        '#description' => $this->t('The text that will replace your search term.'),
         '#size' => 60,
         '#maxlength' => 255,
         '#default_value' => $form_state->getValue('replace_term', ''),
+        '#prefix' => '<div class="replace-input-wrapper">',
+        '#suffix' => '</div>',
+        '#placeholder' => $this->t('Enter replacement text...'),
       ];
       
-      $form['replace_container']['replace_confirm'] = [
-        '#type' => 'checkbox',
-        '#title' => $this->t('I understand this will modify content'),
-        '#description' => $this->t('Check this box to confirm you want to replace text. This action cannot be undone.'),
-        '#default_value' => FALSE,
-        '#states' => [
-          'visible' => [
-            ':input[name="replace_term"]' => ['filled' => TRUE],
-          ],
-          'required' => [
-            ':input[name="replace_term"]' => ['filled' => TRUE],
-          ],
-        ],
-      ];
+      // Show preview results if available
+      $preview_results = $form_state->get('preview_results');
+      if ($preview_results && !empty($preview_results['replaced_count'])) {
+        $form['replace_container']['preview_results'] = [
+          '#prefix' => '<div class="replace-preview-results">',
+          '#suffix' => '</div>',
+          '#markup' => '<h4>' . $this->t('Preview Results') . '</h4>' .
+            '<p class="preview-summary">' . $this->formatPlural(
+              $preview_results['replaced_count'],
+              '✅ Found 1 occurrence that will be replaced in @node_count content item.',
+              '✅ Found @count occurrences that will be replaced in @node_count content items.',
+              ['@node_count' => count($preview_results['affected_nodes'])]
+            ) . '</p>' .
+            '<div class="affected-content"><strong>' . $this->t('Affected content:') . '</strong><ul>' .
+            implode('', array_map(function($node) {
+              return '<li>' . $node['title'] . ' (' . $node['type'] . ' - ' . $node['langcode'] . ')</li>';
+            }, array_slice($preview_results['affected_nodes'], 0, 10))) .
+            (count($preview_results['affected_nodes']) > 10 ? '<li>... ' . $this->t('and @count more', ['@count' => count($preview_results['affected_nodes']) - 10]) . '</li>' : '') .
+            '</ul></div>',
+        ];
+        
+        $form['replace_container']['replace_confirm'] = [
+          '#type' => 'checkbox',
+          '#title' => $this->t('✓ I have reviewed the preview and want to proceed'),
+          '#description' => $this->t('This action will modify your content and cannot be undone. Make sure you have a backup.'),
+          '#default_value' => FALSE,
+          '#prefix' => '<div class="replace-confirm-wrapper">',
+          '#suffix' => '</div>',
+        ];
+      }
     }
 
     $form['actions'] = [
@@ -206,29 +232,57 @@ class TextSearchForm extends FormBase {
     ];
     
     if ($this->currentUser->hasPermission('replace content radar')) {
-      $form['actions']['preview_replace'] = [
-        '#type' => 'submit',
-        '#value' => $this->t('Preview Replace'),
-        '#submit' => ['::previewReplace'],
-        '#states' => [
-          'visible' => [
-            ':input[name="replace_term"]' => ['filled' => TRUE],
-          ],
-        ],
-      ];
+      $preview_results = $form_state->get('preview_results');
       
-      $form['actions']['replace'] = [
-        '#type' => 'submit',
-        '#value' => $this->t('Replace All'),
-        '#button_type' => 'danger',
-        '#submit' => ['::replaceSubmit'],
-        '#states' => [
-          'visible' => [
-            ':input[name="replace_term"]' => ['filled' => TRUE],
-            ':input[name="replace_confirm"]' => ['checked' => TRUE],
+      if (!$preview_results || empty($preview_results['replaced_count'])) {
+        // Show preview button if no preview yet
+        $form['actions']['preview_replace'] = [
+          '#type' => 'submit',
+          '#value' => $this->t('🔍 Preview Changes'),
+          '#submit' => ['::previewReplace'],
+          '#button_type' => 'secondary',
+          '#attributes' => [
+            'class' => ['preview-button'],
+            'title' => $this->t('See what will be replaced before making changes'),
           ],
-        ],
-      ];
+          '#states' => [
+            'visible' => [
+              ':input[name="replace_term"]' => ['filled' => TRUE],
+            ],
+          ],
+        ];
+      } else {
+        // Show apply button after preview
+        $form['actions']['replace'] = [
+          '#type' => 'submit',
+          '#value' => $this->t('✅ Apply Replace'),
+          '#button_type' => 'danger',
+          '#submit' => ['::replaceSubmit'],
+          '#attributes' => [
+            'class' => ['replace-button'],
+            'onclick' => 'return confirm("' . $this->t('Are you sure? This will modify @count occurrences in @nodes content items.', [
+              '@count' => $preview_results['replaced_count'],
+              '@nodes' => count($preview_results['affected_nodes'])
+            ]) . '");',
+          ],
+          '#states' => [
+            'visible' => [
+              ':input[name="replace_confirm"]' => ['checked' => TRUE],
+            ],
+          ],
+        ];
+        
+        // Add a cancel/new search button
+        $form['actions']['clear_preview'] = [
+          '#type' => 'submit',
+          '#value' => $this->t('↩️ New Search'),
+          '#submit' => ['::clearPreview'],
+          '#button_type' => 'secondary',
+          '#attributes' => [
+            'class' => ['clear-preview-button'],
+          ],
+        ];
+      }
     }
 
     // Display results if available.
@@ -434,6 +488,24 @@ class TextSearchForm extends FormBase {
       $this->messenger()->addError($this->t('Error during preview: @message', ['@message' => $e->getMessage()]));
     }
     
+    $form_state->setRebuild();
+  }
+
+  /**
+   * Clear preview handler.
+   */
+  public function clearPreview(array &$form, FormStateInterface $form_state) {
+    // Clear the preview results and rebuild form.
+    $form_state->set('preview_results', NULL);
+    $form_state->setValues([
+      'search_term' => '',
+      'replace_term' => '',
+      'use_regex' => FALSE,
+      'langcode' => '',
+      'sort_alphabetically' => TRUE,
+    ]);
+    $form_state->set('results', NULL);
+    $this->messenger()->addStatus($this->t('Form cleared. Ready for a new search.'));
     $form_state->setRebuild();
   }
   
