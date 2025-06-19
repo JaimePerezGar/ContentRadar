@@ -52,7 +52,7 @@ content_radar.report_export:
 content_radar.report_undo:
   path: '/admin/reports/content-radar/{rid}/undo'
   defaults:
-    _controller: '\Drupal\content_radar\Controller\UndoController::undoPage'
+    _form: '\Drupal\content_radar\Form\SimpleUndoForm'
     _title: 'Undo Replacements'
   requirements:
     _permission: 'replace content radar'
