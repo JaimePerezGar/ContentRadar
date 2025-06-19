@@ -141,10 +141,16 @@ class TextSearchForm extends FormBase {
       $options[$type->id()] = $type->label();
     }
 
-    $form['content_types'] = [
-      '#type' => 'checkboxes',
+    // Content types in collapsible container
+    $form['content_types_container'] = [
+      '#type' => 'details',
       '#title' => $this->t('Content types'),
-      '#description' => $this->t('Select content types to search in. Leave empty to search all.'),
+      '#open' => FALSE,
+      '#description' => $this->t('Select specific content types to search in. Leave unchecked to search all content types.'),
+    ];
+
+    $form['content_types_container']['content_types'] = [
+      '#type' => 'checkboxes',
       '#options' => $options,
       '#default_value' => $form_state->getValue('content_types', []),
     ];
@@ -283,7 +289,7 @@ class TextSearchForm extends FormBase {
           'query' => [
             'search_term' => $form_state->getValue('search_term'),
             'use_regex' => $form_state->getValue('use_regex') ? 'true' : 'false',
-            'content_types' => implode(',', array_filter($form_state->getValue('content_types', []))),
+            'content_types' => implode(',', array_filter($form_state->getValue(['content_types_container', 'content_types'], []))),
             'langcode' => $form_state->getValue('langcode', ''),
           ],
         ]);
@@ -404,7 +410,7 @@ class TextSearchForm extends FormBase {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
     $use_regex = $form_state->getValue('use_regex');
-    $content_types = array_filter($form_state->getValue('content_types', []));
+    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
     $langcode = $form_state->getValue('langcode', '');
     
     try {
@@ -438,7 +444,7 @@ class TextSearchForm extends FormBase {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
     $use_regex = $form_state->getValue('use_regex');
-    $content_types = array_filter($form_state->getValue('content_types', []));
+    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
     $langcode = $form_state->getValue('langcode', '');
     
     if (!$form_state->getValue('replace_confirm')) {
@@ -487,7 +493,7 @@ class TextSearchForm extends FormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $use_regex = $form_state->getValue('use_regex');
-    $content_types = array_filter($form_state->getValue('content_types', []));
+    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
     $langcode = $form_state->getValue('langcode', '');
 
     // Create cache key.
