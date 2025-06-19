@@ -305,10 +305,13 @@ class TextSearchForm extends FormBase {
           // Get entity type with fallback for backward compatibility
           $entity_type = isset($item['entity_type']) ? $item['entity_type'] : 'node';
           $entity_type_label = $this->getEntityTypeLabel($entity_type);
+          // Convert TranslatableMarkup to string for use as array key
+          $entity_type_key = (string) $entity_type_label;
           
-          if (!isset($grouped_results[$entity_type_label])) {
-            $grouped_results[$entity_type_label] = [
+          if (!isset($grouped_results[$entity_type_key])) {
+            $grouped_results[$entity_type_key] = [
               'entity_type' => $entity_type,
+              'entity_type_label' => $entity_type_label,
               'items' => [],
             ];
           }
@@ -332,7 +335,7 @@ class TextSearchForm extends FormBase {
           // Create unique key for selection
           $item_key = $entity_type . ':' . $item['id'] . ':' . $item['field_name'] . ':' . $item['langcode'];
           
-          $grouped_results[$entity_type_label]['items'][] = [
+          $grouped_results[$entity_type_key]['items'][] = [
             'key' => $item_key,
             'index' => $index,
             'entity_type' => $entity_type,
@@ -369,8 +372,9 @@ class TextSearchForm extends FormBase {
       }
 
       // Build selectable results
-      foreach ($grouped_results as $entity_type_label => $group_data) {
-        $form['results_container'][$entity_type_label] = [
+      foreach ($grouped_results as $entity_type_key => $group_data) {
+        $entity_type_label = isset($group_data['entity_type_label']) ? $group_data['entity_type_label'] : $entity_type_key;
+        $form['results_container'][$entity_type_key] = [
           '#type' => 'details',
           '#title' => $this->t('@type (@count)', [
             '@type' => $entity_type_label,
@@ -380,13 +384,13 @@ class TextSearchForm extends FormBase {
           '#attributes' => ['class' => ['entity-type-group']],
         ];
 
-        $form['results_container'][$entity_type_label]['select_group'] = [
+        $form['results_container'][$entity_type_key]['select_group'] = [
           '#type' => 'checkbox',
           '#title' => $this->t('Select all in this group'),
-          '#attributes' => ['class' => ['select-group-checkbox'], 'data-group' => $entity_type_label],
+          '#attributes' => ['class' => ['select-group-checkbox'], 'data-group' => $entity_type_key],
         ];
 
-        $form['results_container'][$entity_type_label]['items'] = [
+        $form['results_container'][$entity_type_key]['items'] = [
           '#type' => 'container',
           '#attributes' => ['class' => ['results-items']],
         ];
@@ -394,18 +398,18 @@ class TextSearchForm extends FormBase {
         foreach ($group_data['items'] as $item) {
           $item_id = 'item_' . $item['index'];
           
-          $form['results_container'][$entity_type_label]['items'][$item_id] = [
+          $form['results_container'][$entity_type_key]['items'][$item_id] = [
             '#type' => 'container',
             '#attributes' => ['class' => ['result-item']],
           ];
 
-          $form['results_container'][$entity_type_label]['items'][$item_id]['selected'] = [
+          $form['results_container'][$entity_type_key]['items'][$item_id]['selected'] = [
             '#type' => 'checkbox',
             '#title' => '',
             '#default_value' => FALSE,
             '#attributes' => [
               'class' => ['item-select-checkbox'],
-              'data-group' => $entity_type_label,
+              'data-group' => $entity_type_key,
               'data-key' => $item['key'],
             ],
           ];
@@ -416,7 +420,7 @@ class TextSearchForm extends FormBase {
             '#item' => $item,
           ];
 
-          $form['results_container'][$entity_type_label]['items'][$item_id]['display'] = $item_display;
+          $form['results_container'][$entity_type_key]['items'][$item_id]['display'] = $item_display;
         }
       }
 
