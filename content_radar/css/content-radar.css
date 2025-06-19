@@ -330,8 +330,26 @@
   color: #cc0000;
   cursor: pointer;
   padding: 0.75rem;
-  padding-right: 2.5rem; /* Add space for the arrow */
+  padding-right: 3rem; /* More space for the arrow */
   position: relative;
+  list-style: none; /* Remove default arrow */
+}
+
+.content-radar-replace-container summary::-webkit-details-marker {
+  display: none; /* Hide default arrow in webkit browsers */
+}
+
+.content-radar-replace-container summary::after {
+  content: '▼';
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform 0.2s;
+}
+
+.content-radar-replace-container[open] summary::after {
+  transform: translateY(-50%) rotate(180deg);
 }
 
 .content-radar-replace-container[open] summary {
@@ -404,6 +422,14 @@
 .content-radar-table tr.unpublished {
   opacity: 0.8;
   background-color: #fff8f8;
+}
+
+.content-radar-table tr.content-type-first td {
+  border-top: 3px solid #e0e0e0;
+}
+
+.content-radar-table tbody tr:first-child.content-type-first td {
+  border-top: none;
 }
 
 /* Table cell specific styles */

@@ -149,6 +149,13 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('content_types', []),
     ];
 
+    $form['sort_alphabetically'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Sort content types alphabetically'),
+      '#description' => $this->t('Group and sort results by content type in alphabetical order.'),
+      '#default_value' => $form_state->getValue('sort_alphabetically', TRUE),
+    ];
+
     // Replace functionality - only show if user has permission.
     if ($this->currentUser->hasPermission('replace content radar')) {
       $form['replace_container'] = [
@@ -292,6 +299,7 @@ class TextSearchForm extends FormBase {
         '#search_term' => $form_state->getValue('search_term'),
         '#is_regex' => $form_state->getValue('use_regex'),
         '#langcode' => $form_state->getValue('langcode'),
+        '#sort_alphabetically' => $form_state->getValue('sort_alphabetically', TRUE),
         '#export_url' => $export_url,
         '#pager' => [
           '#type' => 'pager',

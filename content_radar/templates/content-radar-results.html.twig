@@ -59,9 +59,11 @@
           </thead>
           <tbody>
             {% if grouped_results %}
-              {% for content_type, items in grouped_results %}
+              {% set content_types = sort_alphabetically ? grouped_results|keys|sort : grouped_results|keys %}
+              {% for content_type in content_types %}
+                {% set items = grouped_results[content_type] %}
                 {% for item in items %}
-                  <tr class="{{ item.status ? '' : 'unpublished' }}">
+                  <tr class="{{ item.status ? '' : 'unpublished' }}{{ loop.first ? ' content-type-first' : '' }}">
                     <td class="content-type-cell">{{ content_type }}</td>
                     <td class="id-cell">#{{ item.id }}</td>
                     <td class="title-cell">
