@@ -168,7 +168,7 @@ class TextSearchForm extends FormBase {
     $form['entity_types_container']['entity_types'] = [
       '#type' => 'checkboxes',
       '#options' => $entity_type_options,
-      '#default_value' => $form_state->getValue('entity_types', []),
+      '#default_value' => $form_state->getValue(['entity_types_container', 'entity_types'], []),
     ];
 
     // Get available content types.
@@ -194,7 +194,7 @@ class TextSearchForm extends FormBase {
     $form['content_types_container']['content_types'] = [
       '#type' => 'checkboxes',
       '#options' => $options,
-      '#default_value' => $form_state->getValue('content_types', []),
+      '#default_value' => $form_state->getValue(['content_types_container', 'content_types'], []),
     ];
 
     $form['sort_alphabetically'] = [
