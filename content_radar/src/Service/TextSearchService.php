@@ -617,13 +617,36 @@ class TextSearchService {
     $node_modified = FALSE;
     $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());
     
+    $this->loggerFactory->get('content_radar')->debug('ReplaceInNode called for node @nid, searching for "@search"', [
+      '@nid' => $node->id(),
+      '@search' => $search_term,
+    ]);
+    
     // Replace in title.
     $title = $node->getTitle();
-    $new_title = $this->performReplace($title, $search_term, $replace_term, $use_regex);
-    if ($title !== $new_title) {
-      $node->setTitle($new_title);
-      $node_modified = TRUE;
-      $count++;
+    
+    // Check if title contains the search term (case-insensitive)
+    $title_contains_term = FALSE;
+    if ($use_regex) {
+      $title_contains_term = @preg_match('/' . $search_term . '/i', $title) > 0;
+    } else {
+      $title_contains_term = stripos($title, $search_term) !== FALSE;
+    }
+    
+    if ($title_contains_term) {
+      $new_title = $this->performReplace($title, $search_term, $replace_term, $use_regex);
+      if ($title !== $new_title) {
+        $node->setTitle($new_title);
+        $node_modified = TRUE;
+        // Count actual replacements in title
+        $title_count = $this->countReplacements($title, $search_term, $use_regex);
+        $count += $title_count;
+        $this->loggerFactory->get('content_radar')->debug('Found @count replacements in title of node @nid: "@title"', [
+          '@count' => $title_count,
+          '@nid' => $node->id(),
+          '@title' => $title,
+        ]);
+      }
     }
     
     // Replace in fields.
@@ -640,15 +663,33 @@ class TextSearchService {
       $field_modified = FALSE;
       
       foreach ($field_values as $delta => &$value) {
-        if (isset($value['value'])) {
+        if (isset($value['value']) && !empty($value['value'])) {
           $original = $value['value'];
-          $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
           
-          if ($original !== $new_value) {
-            $value['value'] = $new_value;
-            $field_modified = TRUE;
-            $node_modified = TRUE;
-            $count++;
+          // Check if this field contains the search term (case-insensitive like the search)
+          $contains_term = FALSE;
+          if ($use_regex) {
+            $contains_term = @preg_match('/' . $search_term . '/i', $original) > 0;
+          } else {
+            $contains_term = stripos($original, $search_term) !== FALSE;
+          }
+          
+          if ($contains_term) {
+            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+            
+            if ($original !== $new_value) {
+              $value['value'] = $new_value;
+              $field_modified = TRUE;
+              $node_modified = TRUE;
+              // Count actual replacements in this field value
+              $replacements_in_field = $this->countReplacements($original, $search_term, $use_regex);
+              $count += $replacements_in_field;
+              $this->loggerFactory->get('content_radar')->debug('Found @count replacements in field @field of node @nid', [
+                '@count' => $replacements_in_field,
+                '@field' => $field_name,
+                '@nid' => $node->id(),
+              ]);
+            }
           }
         }
       }
@@ -666,6 +707,11 @@ class TextSearchService {
         $node_modified = TRUE;
       }
     }
+    
+    $this->loggerFactory->get('content_radar')->debug('Total replacements in node @nid: @count', [
+      '@nid' => $node->id(),
+      '@count' => $count,
+    ]);
     
     return $count;
   }
@@ -907,7 +953,8 @@ class TextSearchService {
             if ($original !== $new_value) {
               $value['value'] = $new_value;
               $field_modified = TRUE;
-              $count++;
+              // Count actual replacements in this field value
+              $count += $this->countReplacements($original, $search_term, $use_regex);
             }
           }
         }
@@ -1079,10 +1126,41 @@ class TextSearchService {
       if (@preg_match('/' . $search_term . '/', '') === FALSE) {
         throw new \InvalidArgumentException('Invalid regular expression pattern.');
       }
-      return preg_replace('/' . $search_term . '/', $replace_term, $text);
+      // Use case-insensitive flag for consistency with search
+      return preg_replace('/' . $search_term . '/i', $replace_term, $text);
     }
     else {
-      return str_replace($search_term, $replace_term, $text);
+      // Use case-insensitive replacement
+      return str_ireplace($search_term, $replace_term, $text);
+    }
+  }
+
+  /**
+   * Count the number of replacements that would be made.
+   *
+   * @param string $text
+   *   The text to search in.
+   * @param string $search_term
+   *   The search term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   *
+   * @return int
+   *   The number of occurrences found.
+   */
+  protected function countReplacements($text, $search_term, $use_regex) {
+    if ($use_regex) {
+      // Validate the regex pattern first.
+      if (@preg_match('/' . $search_term . '/', '') === FALSE) {
+        return 0;
+      }
+      // Use case-insensitive flag for consistency with search
+      preg_match_all('/' . $search_term . '/i', $text, $matches);
+      return count($matches[0]);
+    }
+    else {
+      // Use case-insensitive count
+      return substr_count(strtolower($text), strtolower($search_term));
     }
   }
 

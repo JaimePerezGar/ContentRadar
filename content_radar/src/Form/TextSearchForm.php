@@ -478,6 +478,14 @@ class TextSearchForm extends FormBase {
       }
     }
     
+    // Log what we're about to process
+    \Drupal::logger('content_radar')->notice('Starting batch replacement: @count nodes, search: "@search", replace: "@replace", langcode: "@lang"', [
+      '@count' => count($nodes_to_process),
+      '@search' => $search_term,
+      '@replace' => $replace_term,
+      '@lang' => $langcode ?: 'all',
+    ]);
+    
     if (empty($nodes_to_process)) {
       $this->messenger()->addWarning($this->t('No content to process.'));
       return;
@@ -497,6 +505,7 @@ class TextSearchForm extends FormBase {
     foreach ($nodes_to_process as $nid => $node_info) {
       $batch['operations'][] = [
         '\Drupal\content_radar\Form\TextSearchForm::batchProcessSingle',
+        // Pass the search langcode (not the node's langcode) to ensure we replace in the same language we searched in
         [$nid, $search_term, $replace_term, $use_regex, $langcode],
       ];
     }
@@ -577,24 +586,67 @@ class TextSearchForm extends FormBase {
       }
       
       $count = 0;
+      $node_modified = FALSE;
       
-      // If specific language requested and node has that translation.
+      \Drupal::logger('content_radar')->debug('Processing node @nid for replacement. Language: @lang', [
+        '@nid' => $nid,
+        '@lang' => $langcode ?: 'all',
+      ]);
+      
+      // If searching with specific language, only process that translation.
       if (!empty($langcode) && $node->hasTranslation($langcode)) {
         $translation = $node->getTranslation($langcode);
+        \Drupal::logger('content_radar')->debug('Processing translation @lang of node @nid', [
+          '@lang' => $langcode,
+          '@nid' => $nid,
+        ]);
+        
         $count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
         if ($count > 0) {
           $translation->save();
+          $node_modified = TRUE;
+          \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid translation @lang', [
+            '@count' => $count,
+            '@nid' => $nid,
+            '@lang' => $langcode,
+          ]);
         }
       }
-      // If no specific language, process the default translation.
-      else {
+      // If no specific language, process default language first then other translations.
+      elseif (empty($langcode)) {
+        // Process default language
+        $default_lang = $node->language()->getId();
         $count = $text_search_service->replaceInNode($node, $search_term, $replace_term, $use_regex);
         if ($count > 0) {
           $node->save();
+          $node_modified = TRUE;
+          \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid default language @lang', [
+            '@count' => $count,
+            '@nid' => $nid,
+            '@lang' => $default_lang,
+          ]);
+        }
+        
+        // Process other translations
+        foreach ($node->getTranslationLanguages() as $lang_code => $language) {
+          if ($lang_code != $default_lang) {
+            $translation = $node->getTranslation($lang_code);
+            $translation_count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
+            if ($translation_count > 0) {
+              $translation->save();
+              $count += $translation_count;
+              $node_modified = TRUE;
+              \Drupal::logger('content_radar')->notice('Saved @count replacements in node @nid translation @lang', [
+                '@count' => $translation_count,
+                '@nid' => $nid,
+                '@lang' => $lang_code,
+              ]);
+            }
+          }
         }
       }
       
-      if ($count > 0) {
+      if ($node_modified) {
         $context['results']['replaced_count'] += $count;
         $context['message'] = t('Replaced @count occurrences in: @title', [
           '@count' => $count,
@@ -609,6 +661,7 @@ class TextSearchForm extends FormBase {
         '@nid' => $nid,
         '@error' => $e->getMessage(),
       ]);
+      \Drupal::logger('content_radar')->error('Batch process error: @error', ['@error' => $e->getMessage()]);
     }
   }
 
