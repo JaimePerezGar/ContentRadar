@@ -262,7 +262,7 @@ class TextSearchForm extends FormBase {
             'field_label' => $item['field_label'],
             'extract' => $item['extract'],
             'status' => $item['status'],
-            'changed' => $item['changed']->format('Y-m-d H:i'),
+            'changed' => is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i') : date('Y-m-d H:i', $item['changed']),
             'view_url' => $view_url,
             'edit_url' => $edit_url,
             'usage' => $usage_prepared,
@@ -361,7 +361,7 @@ class TextSearchForm extends FormBase {
             ],
           ],
           $item['status'] ? $this->t('Published') : $this->t('Unpublished'),
-          $item['changed']->format('Y-m-d H:i'),
+          is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i') : date('Y-m-d H:i', $item['changed']),
           [
             'data' => [
               '#markup' => $view_link . ' | ' . $edit_link,

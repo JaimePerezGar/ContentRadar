@@ -119,7 +119,10 @@ class TextSearchService {
 
       // Sort by relevance and timestamp.
       usort($results, function ($a, $b) {
-        return $b['changed']->getTimestamp() - $a['changed']->getTimestamp();
+        // Handle both DateTime objects and timestamps
+        $timestampA = is_object($a['changed']) ? $a['changed']->getTimestamp() : $a['changed'];
+        $timestampB = is_object($b['changed']) ? $b['changed']->getTimestamp() : $b['changed'];
+        return $timestampB - $timestampA;
       });
 
       $total = count($results);
@@ -904,7 +907,7 @@ class TextSearchService {
         $item['field_label'],
         strip_tags($item['extract']),
         $item['status'] ? 'Published' : 'Unpublished',
-        $item['changed']->format('Y-m-d H:i:s'),
+        is_object($item['changed']) ? $item['changed']->format('Y-m-d H:i:s') : date('Y-m-d H:i:s', $item['changed']),
         $entity->toUrl('canonical', ['absolute' => TRUE])->toString(),
       ];
     }
