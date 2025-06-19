@@ -613,9 +613,61 @@ class TextSearchService {
    *   Number of replacements made.
    */
   public function replaceInNode(NodeInterface $node, $search_term, $replace_term, $use_regex = FALSE) {
+    $count = 0;
+    $node_modified = FALSE;
     $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());
-    $result = $this->replaceInNodeTranslation($node, $search_term, $replace_term, $use_regex, $field_definitions, FALSE);
-    return $result['count'];
+    
+    // Replace in title.
+    $title = $node->getTitle();
+    $new_title = $this->performReplace($title, $search_term, $replace_term, $use_regex);
+    if ($title !== $new_title) {
+      $node->setTitle($new_title);
+      $node_modified = TRUE;
+      $count++;
+    }
+    
+    // Replace in fields.
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        continue;
+      }
+      
+      if (!$node->hasField($field_name)) {
+        continue;
+      }
+      
+      $field_values = $node->get($field_name)->getValue();
+      $field_modified = FALSE;
+      
+      foreach ($field_values as $delta => &$value) {
+        if (isset($value['value'])) {
+          $original = $value['value'];
+          $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+          
+          if ($original !== $new_value) {
+            $value['value'] = $new_value;
+            $field_modified = TRUE;
+            $node_modified = TRUE;
+            $count++;
+          }
+        }
+      }
+      
+      if ($field_modified) {
+        $node->set($field_name, $field_values);
+      }
+    }
+    
+    // Replace in paragraphs if they exist - but don't save them individually.
+    if (\Drupal::moduleHandler()->moduleExists('paragraphs')) {
+      $para_result = $this->replaceInParagraphsForBatch($node, $search_term, $replace_term, $use_regex);
+      if ($para_result > 0) {
+        $count += $para_result;
+        $node_modified = TRUE;
+      }
+    }
+    
+    return $count;
   }
 
   /**
@@ -777,6 +829,112 @@ class TextSearchService {
     }
     
     return ['modified' => $node_modified, 'count' => $count];
+  }
+
+  /**
+   * Replace text in paragraph fields for batch processing (without saving).
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   *
+   * @return int
+   *   Number of replacements made.
+   */
+  protected function replaceInParagraphsForBatch(NodeInterface $node, $search_term, $replace_term, $use_regex) {
+    $count = 0;
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());
+    
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if ($field_definition->getType() === 'entity_reference_revisions' && 
+          $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$node->hasField($field_name) || $node->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $paragraphs = $node->get($field_name)->referencedEntities();
+        foreach ($paragraphs as $paragraph) {
+          if ($paragraph) {
+            $count += $this->replaceInParagraphEntityNonSaving($paragraph, $search_term, $replace_term, $use_regex);
+          }
+        }
+      }
+    }
+    
+    return $count;
+  }
+
+  /**
+   * Replace text in paragraph entity without saving.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $paragraph
+   *   The paragraph entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   *
+   * @return int
+   *   Number of replacements made.
+   */
+  protected function replaceInParagraphEntityNonSaving(EntityInterface $paragraph, $search_term, $replace_term, $use_regex) {
+    $count = 0;
+    $paragraph_fields = $this->entityFieldManager->getFieldDefinitions('paragraph', $paragraph->bundle());
+    
+    foreach ($paragraph_fields as $field_name => $field_definition) {
+      // Handle text fields.
+      if (in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        if (!$paragraph->hasField($field_name)) {
+          continue;
+        }
+        
+        $field_values = $paragraph->get($field_name)->getValue();
+        $field_modified = FALSE;
+        
+        foreach ($field_values as $delta => &$value) {
+          if (isset($value['value'])) {
+            $original = $value['value'];
+            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+            
+            if ($original !== $new_value) {
+              $value['value'] = $new_value;
+              $field_modified = TRUE;
+              $count++;
+            }
+          }
+        }
+        
+        if ($field_modified) {
+          $paragraph->set($field_name, $field_values);
+        }
+      }
+      // Handle nested paragraphs.
+      elseif ($field_definition->getType() === 'entity_reference_revisions' && 
+              $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$paragraph->hasField($field_name) || $paragraph->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $nested_paragraphs = $paragraph->get($field_name)->referencedEntities();
+        foreach ($nested_paragraphs as $nested_paragraph) {
+          if ($nested_paragraph) {
+            // Recursive call for nested paragraphs.
+            $count += $this->replaceInParagraphEntityNonSaving($nested_paragraph, $search_term, $replace_term, $use_regex);
+          }
+        }
+      }
+    }
+    
+    return $count;
   }
 
   /**

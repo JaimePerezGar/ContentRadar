@@ -491,19 +491,21 @@ class TextSearchForm extends FormBase {
       return;
     }
     
-    // Get all nodes that need to be processed.
-    $nodes_to_process = [];
-    
-    // Get preview results to know which nodes to process.
-    $preview_results = $form_state->get('preview_results');
-    if ($preview_results && !empty($preview_results['affected_nodes'])) {
-      foreach ($preview_results['affected_nodes'] as $node_info) {
+    // First do a dry run to get all affected nodes.
+    try {
+      $preview_result = $this->textSearchService->replaceText($search_term, $replace_term, $use_regex, $content_types, $langcode, TRUE);
+      
+      if (empty($preview_result['affected_nodes'])) {
+        $this->messenger()->addWarning($this->t('No content found to replace.'));
+        return;
+      }
+      
+      $nodes_to_process = [];
+      foreach ($preview_result['affected_nodes'] as $node_info) {
         $nodes_to_process[$node_info['nid']] = $node_info;
       }
-    }
-    
-    if (empty($nodes_to_process)) {
-      $this->messenger()->addWarning($this->t('No content to process.'));
+    } catch (\Exception $e) {
+      $this->messenger()->addError($this->t('Error finding content to replace: @message', ['@message' => $e->getMessage()]));
       return;
     }
     
