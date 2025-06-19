@@ -20,7 +20,6 @@
     <div class="results-header">
       <div class="results-summary">
         <h3>
-          <span class="results-icon">🔍</span>
           {{ 'Found @count matches for'|t({'@count': total}) }} 
           <strong>"{{ search_term }}"</strong>
         </h3>
@@ -35,7 +34,7 @@
       <div class="results-actions">
         {% if export_url %}
           <a href="{{ export_url }}" class="button button--small button--secondary" target="_blank">
-            <span class="button-icon">📥</span> {{ 'Export CSV'|t }}
+            {{ 'Export CSV'|t }}
           </a>
         {% endif %}
       </div>
@@ -123,7 +122,6 @@
     </div>
   {% else %}
     <div class="no-results">
-      <div class="no-results-icon">🔍❌</div>
       <h3>{{ 'No results found'|t }}</h3>
       <p>{{ 'No matches found for "@term"'|t({'@term': search_term}) }}</p>
       {% if is_regex %}

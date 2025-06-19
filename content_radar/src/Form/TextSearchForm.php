@@ -167,7 +167,7 @@ class TextSearchForm extends FormBase {
     if ($this->currentUser->hasPermission('replace content radar') && $results && $results['total'] > 0) {
       $form['replace_container'] = [
         '#type' => 'fieldset',
-        '#title' => $this->t('🔄 Find and Replace'),
+        '#title' => $this->t('Find and Replace'),
         '#attributes' => ['class' => ['content-radar-replace-container']],
       ];
       
@@ -190,8 +190,8 @@ class TextSearchForm extends FormBase {
           '#markup' => '<h4>' . $this->t('Preview Results') . '</h4>' .
             '<p class="preview-summary">' . $this->formatPlural(
               $preview_results['replaced_count'],
-              '✅ Found 1 occurrence that will be replaced in @node_count content item.',
-              '✅ Found @count occurrences that will be replaced in @node_count content items.',
+              'Found 1 occurrence that will be replaced in @node_count content item.',
+              'Found @count occurrences that will be replaced in @node_count content items.',
               ['@node_count' => count($preview_results['affected_nodes'])]
             ) . '</p>' .
             '<div class="affected-content"><strong>' . $this->t('Affected content:') . '</strong><ul>' .
@@ -234,13 +234,8 @@ class TextSearchForm extends FormBase {
     if ($this->currentUser->hasPermission('replace content radar') && $results && $results['total'] > 0) {
       $form['actions']['preview_replace'] = [
         '#type' => 'submit',
-        '#value' => $this->t('🔍 Preview Replace'),
+        '#value' => $this->t('Preview Replace'),
         '#submit' => ['::previewReplace'],
-        '#button_type' => 'secondary',
-        '#attributes' => [
-          'class' => ['preview-button'],
-          'title' => $this->t('See what will be replaced before making changes'),
-        ],
         '#states' => [
           'visible' => [
             ':input[name="replace_term"]' => ['filled' => TRUE],
@@ -250,12 +245,9 @@ class TextSearchForm extends FormBase {
       
       $form['actions']['replace'] = [
         '#type' => 'submit',
-        '#value' => $this->t('✅ Apply Replace'),
+        '#value' => $this->t('Apply Replace'),
         '#button_type' => 'danger',
         '#submit' => ['::replaceSubmit'],
-        '#attributes' => [
-          'class' => ['replace-button'],
-        ],
         '#states' => [
           'visible' => [
             ':input[name="replace_term"]' => ['filled' => TRUE],
@@ -507,7 +499,7 @@ class TextSearchForm extends FormBase {
           '@nodes' => count($result['affected_nodes']),
         ]);
         
-        // Clear caches.
+        // Clear all caches to ensure fresh results.
         $this->cache->deleteAll();
       } else {
         $this->messenger()->addWarning($this->t('No matches found for replacement.'));
@@ -516,9 +508,16 @@ class TextSearchForm extends FormBase {
       $this->messenger()->addError($this->t('Error during replacement: @message', ['@message' => $e->getMessage()]));
     }
     
-    // Clear the form.
-    $form_state->setValues([]);
-    $form_state->setRebuild();
+    // Clear preview and rebuild to show updated results.
+    $form_state->set('preview_results', NULL);
+    $form_state->setValue('replace_term', '');
+    $form_state->setValue('replace_confirm', FALSE);
+    
+    // Force fresh results after replacement
+    $form_state->set('force_fresh_results', TRUE);
+    
+    // Re-run the search to show updated results
+    $this->submitForm($form, $form_state);
   }
 
   /**
@@ -533,16 +532,30 @@ class TextSearchForm extends FormBase {
     // Create cache key.
     $cache_key = 'content_radar:' . md5($search_term . ':' . ($use_regex ? '1' : '0') . ':' . implode(',', $content_types) . ':' . $langcode);
     
-    // Check cache.
-    $cache = $this->cache->get($cache_key);
-    if ($cache && $cache->data) {
-      $results = $cache->data;
+    // Check if we should force fresh results (after replacement)
+    $force_fresh = $form_state->get('force_fresh_results');
+    
+    // Check cache only if not forcing fresh results.
+    if (!$force_fresh) {
+      $cache = $this->cache->get($cache_key);
+      if ($cache && $cache->data) {
+        $results = $cache->data;
+      } else {
+        // Perform search.
+        $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode);
+        
+        // Cache results for 15 minutes.
+        $this->cache->set($cache_key, $results, time() + 900);
+      }
     } else {
-      // Perform search.
+      // Force fresh search.
       $results = $this->textSearchService->search($search_term, $use_regex, $content_types, $langcode);
       
       // Cache results for 15 minutes.
       $this->cache->set($cache_key, $results, time() + 900);
+      
+      // Reset the flag.
+      $form_state->set('force_fresh_results', FALSE);
     }
 
     $form_state->set('results', $results);

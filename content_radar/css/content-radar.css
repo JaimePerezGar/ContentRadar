@@ -431,36 +431,6 @@
   margin-top: 0.5rem;
 }
 
-/* Replace buttons styling */
-.preview-button {
-  background-color: #2196f3;
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.preview-button:hover {
-  background-color: #1976d2;
-}
-
-.replace-button {
-  background-color: #f44336;
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.replace-button:hover {
-  background-color: #d32f2f;
-}
 
 
 /* Danger button styles */
