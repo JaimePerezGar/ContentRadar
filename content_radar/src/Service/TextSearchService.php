@@ -115,18 +115,14 @@ class TextSearchService {
 
       // Search in each entity type
       foreach ($entity_types as $entity_type) {
-        if ($entity_type === 'node') {
-          // For nodes, use the existing logic with content types
-          if (empty($content_types)) {
-            $node_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
-            $content_types = array_keys($node_types);
-          }
+        if ($entity_type === 'node' && !empty($content_types)) {
+          // For nodes with specific content types
           foreach ($content_types as $content_type) {
             $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
           }
         }
         else {
-          // For other entity types
+          // For all entity types (including nodes when no content types specified)
           $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode));
         }
       }
@@ -359,7 +355,7 @@ class TextSearchService {
                 '@para_type' => $current_label,
                 '@field' => $field_definition->getLabel(),
               ]);
-              $results[] = $this->createEntityResultItem($parent_entity, $field_name, $field_label, $match);
+              $results[] = $this->createEntityResultItem($node, $field_name, $field_label, $match);
             }
           }
         }

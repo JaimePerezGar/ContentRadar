@@ -672,8 +672,8 @@ class TextSearchForm extends FormBase {
     $session->set('content_radar_search_params', [
       'search_term' => $search_term,
       'use_regex' => $use_regex,
-      'entity_types' => array_filter($form_state->getValue(['entity_types_container', 'entity_types'], [])),
-      'content_types' => array_filter($form_state->getValue(['content_types_container', 'content_types'], [])),
+      'entity_types' => $entity_types,
+      'content_types' => $content_types,
       'langcode' => $langcode,
     ]);
   }
@@ -684,8 +684,23 @@ class TextSearchForm extends FormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $use_regex = $form_state->getValue('use_regex');
-    $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
-    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
+    // Get selected entity types (filter out FALSE values but keep TRUE values)
+    $entity_types_raw = $form_state->getValue(['entity_types_container', 'entity_types'], []);
+    $entity_types = [];
+    foreach ($entity_types_raw as $key => $value) {
+      if ($value) {
+        $entity_types[] = $key;
+      }
+    }
+    
+    // Get selected content types (filter out FALSE values but keep TRUE values)
+    $content_types_raw = $form_state->getValue(['content_types_container', 'content_types'], []);
+    $content_types = [];
+    foreach ($content_types_raw as $key => $value) {
+      if ($value) {
+        $content_types[] = $key;
+      }
+    }
     $langcode = $form_state->getValue('langcode', '');
 
     // Create cache key.
