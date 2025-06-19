@@ -101,6 +101,18 @@ class TextSearchForm extends FormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $form['#attached']['library'][] = 'content_radar/search';
+    
+    // Check if we're returning from a batch operation.
+    $session = \Drupal::request()->getSession();
+    if ($session->has('content_radar_search_params')) {
+      $params = $session->get('content_radar_search_params');
+      $session->remove('content_radar_search_params');
+      
+      // Set the values and trigger search.
+      $form_state->setValues($params);
+      $form_state->set('force_fresh_results', TRUE);
+      $this->submitForm($form, $form_state);
+    }
 
     $form['search_term'] = [
       '#type' => 'textfield',
@@ -479,45 +491,51 @@ class TextSearchForm extends FormBase {
       return;
     }
     
-    try {
-      // Perform the actual replacement.
-      $result = $this->textSearchService->replaceText($search_term, $replace_term, $use_regex, $content_types, $langcode, FALSE);
-      
-      if ($result['replaced_count'] > 0) {
-        $this->messenger()->addStatus($this->formatPlural(
-          $result['replaced_count'],
-          'Successfully replaced 1 occurrence in @node_count content item.',
-          'Successfully replaced @count occurrences in @node_count content items.',
-          ['@node_count' => count($result['affected_nodes'])]
-        ));
-        
-        // Log the replacement action.
-        \Drupal::logger('content_radar')->notice('Replaced "@search" with "@replace" - @count occurrences in @nodes nodes', [
-          '@search' => $search_term,
-          '@replace' => $replace_term,
-          '@count' => $result['replaced_count'],
-          '@nodes' => count($result['affected_nodes']),
-        ]);
-        
-        // Clear all caches to ensure fresh results.
-        $this->cache->deleteAll();
-      } else {
-        $this->messenger()->addWarning($this->t('No matches found for replacement.'));
+    // Get all nodes that need to be processed.
+    $nodes_to_process = [];
+    
+    // Get preview results to know which nodes to process.
+    $preview_results = $form_state->get('preview_results');
+    if ($preview_results && !empty($preview_results['affected_nodes'])) {
+      foreach ($preview_results['affected_nodes'] as $node_info) {
+        $nodes_to_process[$node_info['nid']] = $node_info;
       }
-    } catch (\Exception $e) {
-      $this->messenger()->addError($this->t('Error during replacement: @message', ['@message' => $e->getMessage()]));
     }
     
-    // Clear preview and rebuild to show updated results.
-    $form_state->set('preview_results', NULL);
-    $form_state->setValue('replace_term', '');
-    $form_state->setValue('replace_confirm', FALSE);
+    if (empty($nodes_to_process)) {
+      $this->messenger()->addWarning($this->t('No content to process.'));
+      return;
+    }
     
-    // Force fresh results after replacement
-    $form_state->set('force_fresh_results', TRUE);
+    // Set up batch operation.
+    $batch = [
+      'title' => $this->t('Replacing text across content'),
+      'operations' => [],
+      'finished' => '\Drupal\content_radar\Form\TextSearchForm::batchFinished',
+      'init_message' => $this->t('Starting text replacement...'),
+      'progress_message' => $this->t('Processed @current out of @total items.'),
+      'error_message' => $this->t('An error occurred during processing.'),
+    ];
     
-    // Re-run the search to show updated results
-    $this->submitForm($form, $form_state);
+    // Split nodes into chunks for batch processing.
+    $chunks = array_chunk($nodes_to_process, 10, TRUE);
+    foreach ($chunks as $chunk) {
+      $batch['operations'][] = [
+        '\Drupal\content_radar\Form\TextSearchForm::batchProcess',
+        [$chunk, $search_term, $replace_term, $use_regex, $langcode],
+      ];
+    }
+    
+    batch_set($batch);
+    
+    // Store the search parameters in session for redirect after batch.
+    $session = \Drupal::request()->getSession();
+    $session->set('content_radar_search_params', [
+      'search_term' => $search_term,
+      'use_regex' => $use_regex,
+      'content_types' => $content_types,
+      'langcode' => $langcode,
+    ]);
   }
 
   /**
@@ -560,6 +578,103 @@ class TextSearchForm extends FormBase {
 
     $form_state->set('results', $results);
     $form_state->setRebuild();
+  }
+
+  /**
+   * Batch process callback for text replacement.
+   */
+  public static function batchProcess($nodes, $search_term, $replace_term, $use_regex, $langcode, &$context) {
+    // Initialize results in context.
+    if (!isset($context['results']['replaced_count'])) {
+      $context['results']['replaced_count'] = 0;
+      $context['results']['processed_nodes'] = 0;
+      $context['results']['errors'] = [];
+    }
+    
+    $text_search_service = \Drupal::service('content_radar.search_service');
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $node_storage = $entity_type_manager->getStorage('node');
+    
+    foreach ($nodes as $nid => $node_info) {
+      try {
+        $node = $node_storage->load($nid);
+        if (!$node) {
+          continue;
+        }
+        
+        // Process the specific language or all languages.
+        $count = 0;
+        if (!empty($langcode) && $node->hasTranslation($langcode)) {
+          $translation = $node->getTranslation($langcode);
+          $count = $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
+        } elseif (empty($langcode)) {
+          // Process all translations.
+          foreach ($node->getTranslationLanguages() as $lang_code => $language) {
+            $translation = $node->getTranslation($lang_code);
+            $count += $text_search_service->replaceInNode($translation, $search_term, $replace_term, $use_regex);
+          }
+        }
+        
+        if ($count > 0) {
+          $node->save();
+          $context['results']['replaced_count'] += $count;
+        }
+        
+        $context['results']['processed_nodes']++;
+        
+        // Update progress message.
+        $context['message'] = t('Processing @title', ['@title' => $node->getTitle()]);
+        
+      } catch (\Exception $e) {
+        $context['results']['errors'][] = t('Error processing node @nid: @error', [
+          '@nid' => $nid,
+          '@error' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  /**
+   * Batch finished callback.
+   */
+  public static function batchFinished($success, $results, $operations) {
+    $messenger = \Drupal::messenger();
+    
+    if ($success) {
+      if (!empty($results['replaced_count'])) {
+        $messenger->addStatus(\Drupal::translation()->formatPlural(
+          $results['replaced_count'],
+          'Successfully replaced 1 occurrence in @node_count content items.',
+          'Successfully replaced @count occurrences in @node_count content items.',
+          [
+            '@node_count' => $results['processed_nodes'],
+          ]
+        ));
+        
+        // Log the action.
+        \Drupal::logger('content_radar')->notice('Batch replacement completed: @count replacements in @nodes nodes', [
+          '@count' => $results['replaced_count'],
+          '@nodes' => $results['processed_nodes'],
+        ]);
+        
+        // Clear all caches to ensure fresh results.
+        \Drupal::cache()->deleteAll();
+      } else {
+        $messenger->addWarning(t('No replacements were made.'));
+      }
+      
+      // Show any errors.
+      if (!empty($results['errors'])) {
+        foreach ($results['errors'] as $error) {
+          $messenger->addError($error);
+        }
+      }
+    } else {
+      $messenger->addError(t('The replacement process encountered an error.'));
+    }
+    
+    // Clear the destination parameter to allow our redirect to work.
+    \Drupal::request()->query->remove('destination');
   }
 
 }

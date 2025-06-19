@@ -307,43 +307,62 @@ class TextSearchService {
    * @param array &$results
    *   Results array to append to.
    */
-  protected function searchParagraphEntity(EntityInterface $paragraph, NodeInterface $node, $search_term, $use_regex, array &$results) {
+  protected function searchParagraphEntity(EntityInterface $paragraph, NodeInterface $node, $search_term, $use_regex, array &$results, $parent_label = '') {
     $paragraph_fields = $this->entityFieldManager->getFieldDefinitions('paragraph', $paragraph->bundle());
     
+    // Get paragraph type label.
+    $para_type_label = $this->t('Paragraph');
+    if ($paragraph->getEntityType() && $paragraph->bundle()) {
+      $para_bundle_entity = $this->entityTypeManager
+        ->getStorage('paragraphs_type')
+        ->load($paragraph->bundle());
+      if ($para_bundle_entity) {
+        $para_type_label = $para_bundle_entity->label();
+      }
+    }
+    
+    // Build full label path.
+    $current_label = $parent_label ? $parent_label . ' > ' . $para_type_label : $para_type_label;
+    
     foreach ($paragraph_fields as $field_name => $field_definition) {
-      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
-        continue;
-      }
-      
-      if (!$paragraph->hasField($field_name)) {
-        continue;
-      }
-      
-      $field_values = $paragraph->get($field_name)->getValue();
-      foreach ($field_values as $value) {
-        $text = $value['value'] ?? '';
-        if (empty($text)) {
+      // Check for text fields.
+      if (in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        if (!$paragraph->hasField($field_name)) {
           continue;
         }
         
-        $matches = $this->searchInText($text, $search_term, $use_regex);
-        if (!empty($matches)) {
-          foreach ($matches as $match) {
-            $para_type_label = $this->t('Paragraph');
-            if ($paragraph->getEntityType() && $paragraph->bundle()) {
-              $para_bundle_entity = $this->entityTypeManager
-                ->getStorage('paragraphs_type')
-                ->load($paragraph->bundle());
-              if ($para_bundle_entity) {
-                $para_type_label = $para_bundle_entity->label();
-              }
+        $field_values = $paragraph->get($field_name)->getValue();
+        foreach ($field_values as $value) {
+          $text = $value['value'] ?? '';
+          if (empty($text)) {
+            continue;
+          }
+          
+          $matches = $this->searchInText($text, $search_term, $use_regex);
+          if (!empty($matches)) {
+            foreach ($matches as $match) {
+              $field_label = $this->t('@para_type > @field', [
+                '@para_type' => $current_label,
+                '@field' => $field_definition->getLabel(),
+              ]);
+              $results[] = $this->createResultItem($node, $field_name, $field_label, $match);
             }
-            
-            $field_label = $this->t('@para_type > @field', [
-              '@para_type' => $para_type_label,
-              '@field' => $field_definition->getLabel(),
-            ]);
-            $results[] = $this->createResultItem($node, $field_name, $field_label, $match);
+          }
+        }
+      }
+      // Check for nested paragraphs.
+      elseif ($field_definition->getType() === 'entity_reference_revisions' && 
+              $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$paragraph->hasField($field_name) || $paragraph->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $nested_paragraphs = $paragraph->get($field_name)->referencedEntities();
+        foreach ($nested_paragraphs as $nested_paragraph) {
+          if ($nested_paragraph) {
+            // Recursive call for nested paragraphs.
+            $this->searchParagraphEntity($nested_paragraph, $node, $search_term, $use_regex, $results, $current_label);
           }
         }
       }
@@ -579,6 +598,27 @@ class TextSearchService {
   }
 
   /**
+   * Replace text in a single node.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node entity.
+   * @param string $search_term
+   *   The search term.
+   * @param string $replace_term
+   *   The replacement term.
+   * @param bool $use_regex
+   *   Whether to use regular expressions.
+   *
+   * @return int
+   *   Number of replacements made.
+   */
+  public function replaceInNode(NodeInterface $node, $search_term, $replace_term, $use_regex = FALSE) {
+    $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());
+    $result = $this->replaceInNodeTranslation($node, $search_term, $replace_term, $use_regex, $field_definitions, FALSE);
+    return $result['count'];
+  }
+
+  /**
    * Replace text within a specific content type.
    *
    * @param string $content_type
@@ -800,36 +840,61 @@ class TextSearchService {
   protected function replaceInParagraphEntity(EntityInterface $paragraph, $search_term, $replace_term, $use_regex, $dry_run) {
     $count = 0;
     $paragraph_fields = $this->entityFieldManager->getFieldDefinitions('paragraph', $paragraph->bundle());
+    $paragraph_modified = FALSE;
     
     foreach ($paragraph_fields as $field_name => $field_definition) {
-      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
-        continue;
+      // Handle text fields.
+      if (in_array($field_definition->getType(), $this->searchableFieldTypes)) {
+        if (!$paragraph->hasField($field_name)) {
+          continue;
+        }
+        
+        $field_values = $paragraph->get($field_name)->getValue();
+        $field_modified = FALSE;
+        
+        foreach ($field_values as $delta => &$value) {
+          if (isset($value['value'])) {
+            $original = $value['value'];
+            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+            
+            if ($original !== $new_value) {
+              $value['value'] = $new_value;
+              $field_modified = TRUE;
+              $paragraph_modified = TRUE;
+              $count++;
+            }
+          }
+        }
+        
+        if ($field_modified && !$dry_run) {
+          $paragraph->set($field_name, $field_values);
+        }
       }
-      
-      if (!$paragraph->hasField($field_name)) {
-        continue;
-      }
-      
-      $field_values = $paragraph->get($field_name)->getValue();
-      $field_modified = FALSE;
-      
-      foreach ($field_values as $delta => &$value) {
-        if (isset($value['value'])) {
-          $original = $value['value'];
-          $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
-          
-          if ($original !== $new_value) {
-            $value['value'] = $new_value;
-            $field_modified = TRUE;
-            $count++;
+      // Handle nested paragraphs.
+      elseif ($field_definition->getType() === 'entity_reference_revisions' && 
+              $field_definition->getSetting('target_type') === 'paragraph') {
+        
+        if (!$paragraph->hasField($field_name) || $paragraph->get($field_name)->isEmpty()) {
+          continue;
+        }
+        
+        $nested_paragraphs = $paragraph->get($field_name)->referencedEntities();
+        foreach ($nested_paragraphs as $nested_paragraph) {
+          if ($nested_paragraph) {
+            // Recursive call for nested paragraphs.
+            $nested_count = $this->replaceInParagraphEntity($nested_paragraph, $search_term, $replace_term, $use_regex, $dry_run);
+            if ($nested_count > 0) {
+              $count += $nested_count;
+              $paragraph_modified = TRUE;
+            }
           }
         }
       }
-      
-      if ($field_modified && !$dry_run) {
-        $paragraph->set($field_name, $field_values);
-        $paragraph->save();
-      }
+    }
+    
+    // Save the paragraph if modified.
+    if ($paragraph_modified && !$dry_run) {
+      $paragraph->save();
     }
     
     return $count;

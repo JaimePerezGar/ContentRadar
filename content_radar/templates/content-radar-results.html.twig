@@ -89,10 +89,16 @@
                     </td>
                     <td class="date-cell">{{ item.changed }}</td>
                     <td class="actions-cell">
-                      <a href="{{ item.view_url }}" target="_blank">{{ 'View'|t }}</a>
-                      {% if item.edit_url %}
-                        | <a href="{{ item.edit_url }}" target="_blank">{{ 'Edit'|t }}</a>
-                      {% endif %}
+                      <div class="dropbutton-wrapper">
+                        <div class="dropbutton-widget">
+                          <ul class="dropbutton">
+                            <li><a href="{{ item.view_url }}" target="_blank">{{ 'View'|t }}</a></li>
+                            {% if item.edit_url %}
+                              <li><a href="{{ item.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
+                            {% endif %}
+                          </ul>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
