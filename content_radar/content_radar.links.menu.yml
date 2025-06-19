@@ -4,3 +4,10 @@ content_radar.search:
   parent: system.admin_content
   description: 'Search and replace text across all content fields.'
   weight: 50
+
+content_radar.reports:
+  title: 'Content Radar Reports'
+  route_name: content_radar.reports
+  parent: system.admin_reports
+  description: 'View reports of text replacement operations.'
+  weight: 50

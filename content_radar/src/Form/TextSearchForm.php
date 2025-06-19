@@ -573,6 +573,11 @@ class TextSearchForm extends FormBase {
       $context['results']['replaced_count'] = 0;
       $context['results']['processed_nodes'] = 0;
       $context['results']['errors'] = [];
+      $context['results']['node_details'] = [];
+      $context['results']['search_term'] = $search_term;
+      $context['results']['replace_term'] = $replace_term;
+      $context['results']['use_regex'] = $use_regex;
+      $context['results']['langcode'] = $langcode;
     }
     
     $text_search_service = \Drupal::service('content_radar.search_service');
@@ -652,6 +657,16 @@ class TextSearchForm extends FormBase {
           '@count' => $count,
           '@title' => $node->getTitle()
         ]);
+        
+        // Store details for the report
+        $context['results']['node_details'][$nid] = [
+          'nid' => $nid,
+          'title' => $node->getTitle(),
+          'type' => $node->bundle(),
+          'langcode' => !empty($langcode) ? $langcode : $node->language()->getId(),
+          'count' => $count,
+          'fields' => ['Multiple fields' => $count], // Simplified for now
+        ];
       }
       
       $context['results']['processed_nodes']++;
@@ -735,6 +750,33 @@ class TextSearchForm extends FormBase {
             '@node_count' => $results['processed_nodes'],
           ]
         ));
+        
+        // Save the report to database
+        try {
+          $database = \Drupal::database();
+          $node_details = isset($results['node_details']) ? $results['node_details'] : [];
+          $rid = $database->insert('content_radar_reports')
+            ->fields([
+              'uid' => \Drupal::currentUser()->id(),
+              'created' => \Drupal::time()->getRequestTime(),
+              'search_term' => isset($results['search_term']) ? $results['search_term'] : '',
+              'replace_term' => isset($results['replace_term']) ? $results['replace_term'] : '',
+              'use_regex' => isset($results['use_regex']) && $results['use_regex'] ? 1 : 0,
+              'langcode' => isset($results['langcode']) ? $results['langcode'] : '',
+              'total_replacements' => $results['replaced_count'],
+              'nodes_affected' => count($node_details),
+              'details' => serialize($node_details),
+            ])
+            ->execute();
+          
+          // Add link to view the report
+          $report_url = \Drupal\Core\Url::fromRoute('content_radar.report_details', ['rid' => $rid]);
+          $messenger->addStatus(t('A report of this replacement operation has been saved. <a href="@url">View report</a>', [
+            '@url' => $report_url->toString(),
+          ]));
+        } catch (\Exception $e) {
+          \Drupal::logger('content_radar')->error('Failed to save report: @error', ['@error' => $e->getMessage()]);
+        }
         
         // Log the action.
         \Drupal::logger('content_radar')->notice('Batch replacement completed: @count replacements in @nodes nodes', [

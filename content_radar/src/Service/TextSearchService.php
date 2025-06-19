@@ -608,11 +608,13 @@ class TextSearchService {
    *   The replacement term.
    * @param bool $use_regex
    *   Whether to use regular expressions.
+   * @param bool $return_details
+   *   Whether to return detailed information about replacements.
    *
-   * @return int
-   *   Number of replacements made.
+   * @return int|array
+   *   Number of replacements made, or array with details if $return_details is TRUE.
    */
-  public function replaceInNode(NodeInterface $node, $search_term, $replace_term, $use_regex = FALSE) {
+  public function replaceInNode(NodeInterface $node, $search_term, $replace_term, $use_regex = FALSE, $return_details = FALSE) {
     $count = 0;
     $node_modified = FALSE;
     $field_definitions = $this->entityFieldManager->getFieldDefinitions('node', $node->bundle());

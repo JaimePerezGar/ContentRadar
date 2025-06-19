@@ -16,3 +16,35 @@ content_radar.export:
     _permission: 'use content radar'
   options:
     _admin_route: TRUE
+
+content_radar.reports:
+  path: '/admin/reports/content-radar'
+  defaults:
+    _controller: '\Drupal\content_radar\Controller\ReportsController::reportsPage'
+    _title: 'Content Radar Reports'
+  requirements:
+    _permission: 'view content radar reports'
+  options:
+    _admin_route: TRUE
+
+content_radar.report_details:
+  path: '/admin/reports/content-radar/{rid}'
+  defaults:
+    _controller: '\Drupal\content_radar\Controller\ReportsController::reportDetails'
+    _title: 'Report Details'
+  requirements:
+    _permission: 'view content radar reports'
+    rid: '\d+'
+  options:
+    _admin_route: TRUE
+
+content_radar.report_export:
+  path: '/admin/reports/content-radar/{rid}/export'
+  defaults:
+    _controller: '\Drupal\content_radar\Controller\ReportsController::exportReport'
+    _title: 'Export Report'
+  requirements:
+    _permission: 'view content radar reports'
+    rid: '\d+'
+  options:
+    _admin_route: TRUE

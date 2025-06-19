@@ -63,6 +63,76 @@ function content_radar_schema() {
     ],
   ];
 
+  $schema['content_radar_reports'] = [
+    'description' => 'Stores reports of text replacements made by Content Radar.',
+    'fields' => [
+      'rid' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique report ID.',
+      ],
+      'uid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {users}.uid of the user who performed the replacement.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Timestamp when the replacement was performed.',
+      ],
+      'search_term' => [
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'The search term that was replaced.',
+      ],
+      'replace_term' => [
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'The replacement term.',
+      ],
+      'use_regex' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Whether regex was used (1) or not (0).',
+      ],
+      'langcode' => [
+        'type' => 'varchar',
+        'length' => 12,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Language code of the replacement, empty for all languages.',
+      ],
+      'total_replacements' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Total number of text replacements made.',
+      ],
+      'nodes_affected' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Number of nodes affected.',
+      ],
+      'details' => [
+        'type' => 'blob',
+        'size' => 'big',
+        'description' => 'Serialized array of detailed replacement information.',
+      ],
+    ],
+    'primary key' => ['rid'],
+    'indexes' => [
+      'uid' => ['uid'],
+      'created' => ['created'],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -81,4 +151,14 @@ function content_radar_uninstall() {
   \Drupal::cache()->deleteAll();
   
   \Drupal::messenger()->addStatus(t('ContentRadar module has been uninstalled successfully.'));
+}
+
+/**
+ * Create the content_radar_reports table.
+ */
+function content_radar_update_8001() {
+  $schema = content_radar_schema();
+  if (!Database::getConnection()->schema()->tableExists('content_radar_reports')) {
+    Database::getConnection()->schema()->createTable('content_radar_reports', $schema['content_radar_reports']);
+  }
 }

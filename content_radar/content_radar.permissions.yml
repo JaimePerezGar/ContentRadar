@@ -8,3 +8,7 @@ replace content radar:
   description: 'Allows users to find and replace text across content. Warning: This is a powerful permission that can modify content.'
   restrict access: true
   warning: 'This permission allows users to modify content in bulk. Grant with caution.'
+
+view content radar reports:
+  title: 'View Content Radar reports'
+  description: 'View reports of text replacement operations performed by Content Radar.'

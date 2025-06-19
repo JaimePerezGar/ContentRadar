@@ -1,0 +1,83 @@
+{#
+/**
+ * @file
+ * Default theme implementation for Content Radar report details.
+ *
+ * Available variables:
+ * - report: The report object.
+ * - summary: Report summary information.
+ * - details: Detailed information about affected nodes.
+ *
+ * @ingroup themeable
+ */
+#}
+<div class="content-radar-report-details">
+  <div class="report-summary">
+    <h2>{{ 'Report Summary'|t }}</h2>
+    <dl>
+      <dt>{{ 'Date'|t }}</dt>
+      <dd>{{ summary.date }}</dd>
+      
+      <dt>{{ 'Performed by'|t }}</dt>
+      <dd>{{ summary.user }}</dd>
+      
+      <dt>{{ 'Search term'|t }}</dt>
+      <dd><code>{{ summary.search_term }}</code></dd>
+      
+      <dt>{{ 'Replace term'|t }}</dt>
+      <dd><code>{{ summary.replace_term }}</code></dd>
+      
+      <dt>{{ 'Language'|t }}</dt>
+      <dd>{{ summary.language }}</dd>
+      
+      <dt>{{ 'Use regex'|t }}</dt>
+      <dd>{{ summary.use_regex }}</dd>
+      
+      <dt>{{ 'Total replacements'|t }}</dt>
+      <dd><strong>{{ summary.total_replacements }}</strong></dd>
+      
+      <dt>{{ 'Nodes affected'|t }}</dt>
+      <dd><strong>{{ summary.nodes_affected }}</strong></dd>
+    </dl>
+  </div>
+
+  {% if details %}
+    <div class="report-details">
+      <h3>{{ 'Affected Nodes'|t }}</h3>
+      <table class="content-radar-report-table">
+        <thead>
+          <tr>
+            <th>{{ 'Node'|t }}</th>
+            <th>{{ 'Content Type'|t }}</th>
+            <th>{{ 'Language'|t }}</th>
+            <th>{{ 'Replacements'|t }}</th>
+            <th>{{ 'Actions'|t }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for node in details %}
+            <tr>
+              <td>
+                <a href="{{ node.url }}" target="_blank">{{ node.title }}</a>
+              </td>
+              <td>{{ node.type }}</td>
+              <td>{{ node.langcode }}</td>
+              <td>{{ node.count }}</td>
+              <td>
+                <ul class="links inline">
+                  <li><a href="{{ node.url }}" target="_blank">{{ 'View'|t }}</a></li>
+                  <li><a href="{{ node.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
+                </ul>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <div class="report-actions">
+    <a href="{{ back_url }}" class="button">{{ '← Back to reports'|t }}</a>
+    <a href="{{ export_url }}" class="button button--small">{{ 'Export CSV'|t }}</a>
+  </div>
+</div>
