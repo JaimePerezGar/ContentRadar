@@ -116,6 +116,11 @@ class UndoController extends ControllerBase {
     }
 
     $build = [];
+    
+    // Add libraries.
+    $build['#attached']['library'][] = 'content_radar/undo-page';
+    $build['#attached']['library'][] = 'core/jquery';
+    $build['#attached']['library'][] = 'core/drupal';
 
     // Report summary.
     $user = $this->entityTypeManager()->getStorage('user')->load($report->uid);
@@ -189,10 +194,16 @@ class UndoController extends ControllerBase {
 
     // Build the form.
     $csrf_token = $this->csrfToken->get('content_radar_undo_form');
+    $form_action = Url::fromRoute('content_radar.report_undo', ['rid' => $rid])->toString();
+    
     $build['form'] = [
-      '#prefix' => '<form method="POST" action="' . Url::fromRoute('content_radar.report_undo', ['rid' => $rid])->toString() . '">' .
+      '#type' => 'container',
+      '#attributes' => ['id' => 'content-radar-undo-form-container'],
+    ];
+    
+    $build['form']['form_start'] = [
+      '#markup' => '<form method="POST" action="' . $form_action . '" id="content-radar-undo-form">' .
                    '<input type="hidden" name="csrf_token" value="' . $csrf_token . '" />',
-      '#suffix' => '</form>',
     ];
 
     // Check nodes.
@@ -274,9 +285,9 @@ class UndoController extends ControllerBase {
 
     // Select all checkbox.
     $build['form']['select_all'] = [
-      '#markup' => '<label><input type="checkbox" id="select-all-nodes"' . 
+      '#markup' => '<div class="form-item"><label><input type="checkbox" id="select-all-nodes"' . 
                    ($all_checked ? ' checked="checked"' : '') . ' /> ' . 
-                   $this->t('Select all with occurrences') . '</label>',
+                   $this->t('Select all with occurrences') . '</label></div>',
     ];
 
     $build['form']['table'] = [
@@ -298,9 +309,10 @@ class UndoController extends ControllerBase {
     $build['form']['actions']['cancel'] = [
       '#markup' => '<a href="' . Url::fromRoute('content_radar.report_details', ['rid' => $rid])->toString() . '" class="button">' . $this->t('Cancel') . '</a>',
     ];
-
-    // Add JavaScript.
-    $build['#attached']['library'][] = 'content_radar/undo-page';
+    
+    $build['form']['form_end'] = [
+      '#markup' => '</form>',
+    ];
 
     return $build;
   }
