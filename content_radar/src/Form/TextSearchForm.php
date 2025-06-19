@@ -159,9 +159,8 @@ class TextSearchForm extends FormBase {
     // Replace functionality - only show if user has permission.
     if ($this->currentUser->hasPermission('replace content radar')) {
       $form['replace_container'] = [
-        '#type' => 'details',
+        '#type' => 'fieldset',
         '#title' => $this->t('Find and Replace'),
-        '#open' => FALSE,
         '#attributes' => ['class' => ['content-radar-replace-container']],
       ];
       

@@ -323,37 +323,17 @@
   border: 1px solid #ffcccc;
   border-radius: 4px;
   margin: 1rem 0;
+  padding: 1rem;
 }
 
-.content-radar-replace-container summary {
+.content-radar-replace-container legend {
   font-weight: bold;
   color: #cc0000;
-  cursor: pointer;
-  padding: 0.75rem;
-  padding-right: 3rem; /* More space for the arrow */
-  position: relative;
-  list-style: none; /* Remove default arrow */
+  padding: 0 0.5rem;
+  font-size: 1.1rem;
 }
 
-.content-radar-replace-container summary::-webkit-details-marker {
-  display: none; /* Hide default arrow in webkit browsers */
-}
-
-.content-radar-replace-container summary::after {
-  content: '▼';
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  transition: transform 0.2s;
-}
-
-.content-radar-replace-container[open] summary::after {
-  transform: translateY(-50%) rotate(180deg);
-}
-
-.content-radar-replace-container[open] summary {
-  border-bottom: 1px solid #ffcccc;
+.content-radar-replace-container .form-item {
   margin-bottom: 1rem;
 }
 
@@ -361,7 +341,7 @@
   background-color: #ffeeee;
   padding: 0.75rem;
   border-radius: 4px;
-  margin: 1rem;
+  margin: 1rem 0;
 }
 
 .form-item-replace-confirm .description {
