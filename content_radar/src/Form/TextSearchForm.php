@@ -203,7 +203,7 @@ class TextSearchForm extends FormBase {
       $form['replace_container'] = [
         '#type' => 'fieldset',
         '#title' => $this->t('Find and Replace'),
-        '#attributes' => ['class' => ['messages', 'messages--warning']],
+        '#attributes' => ['class' => ['form-item-container']],
       ];
 
       $form['replace_container']['replace_term'] = [
@@ -385,37 +385,50 @@ class TextSearchForm extends FormBase {
       $selected_items = array_filter($selected_items);
     }
 
-    // Perform replacement.
+    // First, count how many replacements will be made.
     try {
-      $result = $this->textSearchService->replaceText(
+      // Do a dry run to count replacements.
+      $dry_run_result = $this->textSearchService->replaceText(
         $search_term,
         $replace_term,
         $use_regex,
         array_keys($entity_types),
         array_keys($content_types),
         $langcode,
-        FALSE,
+        TRUE, // Dry run
         $selected_items
       );
 
-      if ($result['replaced_count'] > 0) {
-        // Save report.
-        $rid = $this->saveReport(
-          $search_term,
-          $replace_term,
-          $use_regex,
-          $langcode,
-          $result['replaced_count'],
-          $result['affected_entities']
-        );
+      if ($dry_run_result['replaced_count'] > 0) {
+        // Set up batch process.
+        $batch = [
+          'title' => $this->t('Processing text replacements'),
+          'operations' => [],
+          'init_message' => $this->t('Starting text replacement...'),
+          'progress_message' => $this->t('Processed @current out of @total entities.'),
+          'error_message' => $this->t('An error occurred during processing.'),
+          'finished' => '\Drupal\content_radar\Form\TextSearchForm::batchFinished',
+        ];
 
-        $this->messenger()->addStatus($this->t('Successfully replaced @count occurrences in @entities entities.', [
-          '@count' => $result['replaced_count'],
-          '@entities' => count($result['affected_entities']),
-        ]));
+        // Process entities in chunks.
+        $entities_to_process = $dry_run_result['affected_entities'];
+        $chunks = array_chunk($entities_to_process, 10);
+        
+        foreach ($chunks as $chunk) {
+          $batch['operations'][] = [
+            '\Drupal\content_radar\Form\TextSearchForm::batchProcess',
+            [
+              $chunk,
+              $search_term,
+              $replace_term,
+              $use_regex,
+              $langcode,
+              $selected_items,
+            ],
+          ];
+        }
 
-        // Redirect to report.
-        $form_state->setRedirect('content_radar.report_detail', ['rid' => $rid]);
+        batch_set($batch);
       }
       else {
         $this->messenger()->addWarning($this->t('No replacements were made.'));
@@ -472,6 +485,115 @@ class TextSearchForm extends FormBase {
       ->execute();
 
     return $rid;
+  }
+
+  /**
+   * Batch process callback.
+   */
+  public static function batchProcess($chunk, $search_term, $replace_term, $use_regex, $langcode, $selected_items, &$context) {
+    $text_search_service = \Drupal::service('content_radar.search_service');
+    
+    // Initialize context results.
+    if (!isset($context['results']['total_replacements'])) {
+      $context['results']['total_replacements'] = 0;
+      $context['results']['affected_entities'] = [];
+      $context['results']['search_term'] = $search_term;
+      $context['results']['replace_term'] = $replace_term;
+      $context['results']['use_regex'] = $use_regex;
+      $context['results']['langcode'] = $langcode;
+    }
+    
+    // Process each entity in the chunk.
+    foreach ($chunk as $entity_info) {
+      try {
+        $entity = \Drupal::entityTypeManager()
+          ->getStorage($entity_info['entity_type'])
+          ->load($entity_info['id']);
+        
+        if ($entity) {
+          // Replace text in this specific entity.
+          $entity_key = $entity_info['entity_type'] . ':' . $entity_info['id'];
+          $entity_selected_items = [];
+          
+          // Filter selected items for this entity.
+          foreach ($selected_items as $key => $value) {
+            if (strpos($key, $entity_key) === 0) {
+              $entity_selected_items[$key] = $value;
+            }
+          }
+          
+          $result = $text_search_service->replaceText(
+            $search_term,
+            $replace_term,
+            $use_regex,
+            [$entity_info['entity_type']],
+            [],
+            $langcode,
+            FALSE,
+            !empty($entity_selected_items) ? $entity_selected_items : []
+          );
+          
+          if ($result['replaced_count'] > 0) {
+            $context['results']['total_replacements'] += $result['replaced_count'];
+            $context['results']['affected_entities'] = array_merge(
+              $context['results']['affected_entities'],
+              $result['affected_entities']
+            );
+          }
+        }
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('content_radar')->error('Batch process error: @message', [
+          '@message' => $e->getMessage(),
+        ]);
+      }
+      
+      // Update progress message.
+      $context['message'] = t('Processing entity: @title', [
+        '@title' => isset($entity_info['title']) ? $entity_info['title'] : $entity_info['id'],
+      ]);
+    }
+  }
+
+  /**
+   * Batch finished callback.
+   */
+  public static function batchFinished($success, $results, $operations) {
+    if ($success) {
+      if (!empty($results['total_replacements'])) {
+        // Save report.
+        $database = \Drupal::database();
+        $rid = $database->insert('content_radar_reports')
+          ->fields([
+            'uid' => \Drupal::currentUser()->id(),
+            'created' => \Drupal::time()->getRequestTime(),
+            'search_term' => $results['search_term'],
+            'replace_term' => $results['replace_term'],
+            'use_regex' => $results['use_regex'] ? 1 : 0,
+            'langcode' => $results['langcode'],
+            'total_replacements' => $results['total_replacements'],
+            'affected_entities' => count($results['affected_entities']),
+            'details' => serialize($results['affected_entities']),
+          ])
+          ->execute();
+        
+        \Drupal::messenger()->addStatus(t('Successfully replaced @count occurrences in @entities entities.', [
+          '@count' => $results['total_replacements'],
+          '@entities' => count($results['affected_entities']),
+        ]));
+        
+        // Redirect to report.
+        $url = \Drupal\Core\Url::fromRoute('content_radar.report_detail', ['rid' => $rid]);
+        $redirect = new \Symfony\Component\HttpFoundation\RedirectResponse($url->toString());
+        $redirect->send();
+      }
+      else {
+        \Drupal::messenger()->addWarning(t('No replacements were made.'));
+      }
+    }
+    else {
+      \Drupal::messenger()->addError(t('An error occurred during the batch process.'));
+    }
   }
 
 }

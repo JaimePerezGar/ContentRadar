@@ -27,3 +27,16 @@
   margin-bottom: 1rem;
   font-weight: bold;
 }
+
+/* Replace container styling */
+fieldset.form-item-container {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+fieldset.form-item-container legend {
+  font-weight: bold;
+  padding: 0 0.5rem;
+}
