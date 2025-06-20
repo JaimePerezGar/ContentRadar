@@ -125,6 +125,13 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('use_regex', FALSE),
     ];
 
+    $form['deep_search'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Deep search (search all related entities)'),
+      '#description' => $this->t('Enable to search recursively in ALL referenced entities, blocks, and components. This may take longer but finds text in VLSuite, Layout Builder, and all nested content.'),
+      '#default_value' => $form_state->getValue('deep_search', FALSE),
+    ];
+
     // Get available languages.
     $languages = $this->languageManager->getLanguages();
     $language_options = ['' => $this->t('- All languages -')];
@@ -148,21 +155,8 @@ class TextSearchForm extends FormBase {
       '#description' => $this->t('Select entity types to search in. Leave unchecked to search all.'),
     ];
 
-    $entity_type_options = [
-      'node' => $this->t('Content (Nodes)'),
-      'block_content' => $this->t('Custom blocks'),
-      'taxonomy_term' => $this->t('Taxonomy terms'),
-      'user' => $this->t('Users'),
-      'media' => $this->t('Media'),
-      'menu_link_content' => $this->t('Menu links'),
-      'comment' => $this->t('Comments'),
-      'paragraph' => $this->t('Paragraphs'),
-      'webform_submission' => $this->t('Webform submissions'),
-      'commerce_product' => $this->t('Commerce products'),
-      'commerce_product_variation' => $this->t('Commerce product variations'),
-      'custom_block' => $this->t('Custom blocks (Layout Builder)'),
-      'profile' => $this->t('User profiles'),
-    ];
+    // Get all available entity types dynamically
+    $entity_type_options = $this->getAllEntityTypeOptions();
 
     // Filter out non-existent entity types.
     $definitions = $this->entityTypeManager->getDefinitions();
@@ -357,11 +351,72 @@ class TextSearchForm extends FormBase {
   }
 
   /**
+   * Get all available entity type options for the form.
+   */
+  protected function getAllEntityTypeOptions() {
+    $options = [];
+    $definitions = $this->entityTypeManager->getDefinitions();
+
+    // Custom labels for common entity types
+    $custom_labels = [
+      'node' => $this->t('Content (Nodes)'),
+      'block_content' => $this->t('Custom blocks'),
+      'taxonomy_term' => $this->t('Taxonomy terms'),
+      'user' => $this->t('Users'),
+      'media' => $this->t('Media'),
+      'menu_link_content' => $this->t('Menu links'),
+      'comment' => $this->t('Comments'),
+      'paragraph' => $this->t('Paragraphs'),
+      'webform_submission' => $this->t('Webform submissions'),
+      'commerce_product' => $this->t('Commerce products'),
+      'commerce_product_variation' => $this->t('Commerce product variations'),
+      'custom_block' => $this->t('Custom blocks (Layout Builder)'),
+      'profile' => $this->t('User profiles'),
+    ];
+
+    foreach ($definitions as $entity_type_id => $definition) {
+      // Only include content entities
+      if (!$definition->entityClassImplements('\Drupal\Core\Entity\ContentEntityInterface')) {
+        continue;
+      }
+
+      // Skip entities that typically don't contain searchable text
+      $skip_types = [
+        'file',
+        'crop',
+        'image_style',
+        'view',
+        'shortcut',
+        'path_alias',
+        'redirect',
+      ];
+
+      if (in_array($entity_type_id, $skip_types)) {
+        continue;
+      }
+
+      // Use custom label if available, otherwise use the entity type label
+      if (isset($custom_labels[$entity_type_id])) {
+        $options[$entity_type_id] = $custom_labels[$entity_type_id];
+      } else {
+        $label = $definition->getLabel();
+        $options[$entity_type_id] = $label . ' (' . $entity_type_id . ')';
+      }
+    }
+
+    // Sort options alphabetically
+    asort($options);
+
+    return $options;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $use_regex = $form_state->getValue('use_regex');
+    $deep_search = $form_state->getValue('deep_search');
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
     $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
@@ -371,16 +426,30 @@ class TextSearchForm extends FormBase {
     $page = \Drupal::request()->query->get('page', 0);
 
     // Perform search.
-    $results = $this->textSearchService->search(
-      $search_term,
-      $use_regex,
-      array_keys($entity_types),
-      array_keys($content_types),
-      $langcode,
-      $page,
-      50,
-      array_keys($paragraph_types)
-    );
+    if ($deep_search) {
+      // Use deep search to find ALL related entities
+      $results = $this->textSearchService->deepSearch(
+        $search_term,
+        $use_regex,
+        array_keys($entity_types),
+        array_keys($content_types),
+        $langcode,
+        $page,
+        50,
+        array_keys($paragraph_types)
+      );
+    } else {
+      $results = $this->textSearchService->search(
+        $search_term,
+        $use_regex,
+        array_keys($entity_types),
+        array_keys($content_types),
+        $langcode,
+        $page,
+        50,
+        array_keys($paragraph_types)
+      );
+    }
 
     // Store results in form state.
     $form_state->set('results', $results);
