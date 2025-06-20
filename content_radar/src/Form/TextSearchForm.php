@@ -149,13 +149,19 @@ class TextSearchForm extends FormBase {
     ];
 
     $entity_type_options = [
-      'node' => $this->t('Content'),
+      'node' => $this->t('Content (Nodes)'),
       'block_content' => $this->t('Custom blocks'),
       'taxonomy_term' => $this->t('Taxonomy terms'),
       'user' => $this->t('Users'),
       'media' => $this->t('Media'),
       'menu_link_content' => $this->t('Menu links'),
       'comment' => $this->t('Comments'),
+      'paragraph' => $this->t('Paragraphs'),
+      'webform_submission' => $this->t('Webform submissions'),
+      'commerce_product' => $this->t('Commerce products'),
+      'commerce_product_variation' => $this->t('Commerce product variations'),
+      'custom_block' => $this->t('Custom blocks (Layout Builder)'),
+      'profile' => $this->t('User profiles'),
     ];
 
     // Filter out non-existent entity types.
@@ -196,6 +202,35 @@ class TextSearchForm extends FormBase {
       '#options' => $options,
       '#default_value' => $form_state->getValue(['content_types_container', 'content_types'], []),
     ];
+
+    // Paragraph types selection.
+    $paragraph_types = [];
+    if ($this->entityTypeManager->hasDefinition('paragraphs_type')) {
+      $paragraph_types_entities = $this->entityTypeManager->getStorage('paragraphs_type')->loadMultiple();
+      foreach ($paragraph_types_entities as $type) {
+        $paragraph_types[$type->id()] = $type->label();
+      }
+    }
+
+    if (!empty($paragraph_types)) {
+      $form['paragraph_types_container'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Paragraph types'),
+        '#open' => FALSE,
+        '#description' => $this->t('Select specific paragraph types to search in.'),
+        '#states' => [
+          'visible' => [
+            ':input[name="entity_types[paragraph]"]' => ['checked' => TRUE],
+          ],
+        ],
+      ];
+
+      $form['paragraph_types_container']['paragraph_types'] = [
+        '#type' => 'checkboxes',
+        '#options' => $paragraph_types,
+        '#default_value' => $form_state->getValue(['paragraph_types_container', 'paragraph_types'], []),
+      ];
+    }
 
     // Replace functionality.
     $results = $form_state->get('results');
@@ -330,6 +365,7 @@ class TextSearchForm extends FormBase {
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
     $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
+    $paragraph_types = array_filter($form_state->getValue(['paragraph_types_container', 'paragraph_types'], []));
 
     // Get current page from query parameter.
     $page = \Drupal::request()->query->get('page', 0);
@@ -342,7 +378,8 @@ class TextSearchForm extends FormBase {
       array_keys($content_types),
       $langcode,
       $page,
-      50
+      50,
+      array_keys($paragraph_types)
     );
 
     // Store results in form state.
@@ -350,7 +387,7 @@ class TextSearchForm extends FormBase {
     $form_state->setRebuild();
 
     // Log the search.
-    $this->logSearch($search_term, $use_regex, $entity_types, $content_types, $results['total']);
+    $this->logSearch($search_term, $use_regex, $entity_types, $content_types, $results['total'], $paragraph_types);
 
     // Show message.
     if ($results['total'] > 0) {
@@ -376,6 +413,7 @@ class TextSearchForm extends FormBase {
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
     $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
+    $paragraph_types = array_filter($form_state->getValue(['paragraph_types_container', 'paragraph_types'], []));
     $replace_mode = $form_state->getValue('replace_mode', 'selected');
 
     // Get selected items.
@@ -396,7 +434,8 @@ class TextSearchForm extends FormBase {
         array_keys($content_types),
         $langcode,
         TRUE, // Dry run
-        $selected_items
+        $selected_items,
+        array_keys($paragraph_types)
       );
 
       if ($dry_run_result['replaced_count'] > 0) {
@@ -444,7 +483,7 @@ class TextSearchForm extends FormBase {
   /**
    * Log a search query.
    */
-  protected function logSearch($search_term, $use_regex, $entity_types, $content_types, $results_count) {
+  protected function logSearch($search_term, $use_regex, $entity_types, $content_types, $results_count, $paragraph_types = []) {
     try {
       $this->database->insert('content_radar_log')
         ->fields([
@@ -530,7 +569,8 @@ class TextSearchForm extends FormBase {
             [],
             $langcode,
             FALSE,
-            !empty($entity_selected_items) ? $entity_selected_items : []
+            !empty($entity_selected_items) ? $entity_selected_items : [],
+            []
           );
           
           if ($result['replaced_count'] > 0) {

@@ -58,6 +58,29 @@ class TextSearchService {
   ];
 
   /**
+   * Entity reference field types to search recursively.
+   *
+   * @var array
+   */
+  protected $referenceFieldTypes = [
+    'entity_reference',
+    'entity_reference_revisions',
+  ];
+
+  /**
+   * Complex field types that may contain text.
+   *
+   * @var array
+   */
+  protected $complexFieldTypes = [
+    'link',
+    'text_with_summary',
+    'formatted_text',
+    'image',
+    'file',
+  ];
+
+  /**
    * Constructs a new TextSearchService.
    */
   public function __construct(
@@ -75,7 +98,7 @@ class TextSearchService {
   /**
    * Search for text across entities.
    */
-  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50) {
+  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = []) {
     $results = [];
     $total = 0;
 
@@ -91,6 +114,12 @@ class TextSearchService {
           // For nodes with specific content types.
           foreach ($content_types as $content_type) {
             $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
+          }
+        }
+        elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
+          // For paragraphs with specific types.
+          foreach ($paragraph_types as $paragraph_type) {
+            $results = array_merge($results, $this->searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode));
           }
         }
         else {
@@ -126,7 +155,7 @@ class TextSearchService {
   /**
    * Replace text across entities.
    */
-  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = []) {
+  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = []) {
     $replaced_count = 0;
     $affected_entities = [];
 
@@ -147,6 +176,13 @@ class TextSearchService {
           if ($entity_type === 'node' && !empty($content_types)) {
             foreach ($content_types as $content_type) {
               $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+              $replaced_count += $result['count'];
+              $affected_entities = array_merge($affected_entities, $result['entities']);
+            }
+          }
+          elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
+            foreach ($paragraph_types as $paragraph_type) {
+              $result = $this->replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
               $replaced_count += $result['count'];
               $affected_entities = array_merge($affected_entities, $result['entities']);
             }
@@ -198,7 +234,52 @@ class TextSearchService {
         }
       }
 
-      $this->searchEntity($node, $search_term, $use_regex, $results);
+      $processed = [];
+      $this->searchEntity($node, $search_term, $use_regex, $results, $processed);
+    }
+
+    return $results;
+  }
+
+  /**
+   * Search within a specific paragraph type.
+   */
+  protected function searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode = '') {
+    $results = [];
+
+    try {
+      $storage = $this->entityTypeManager->getStorage('paragraph');
+      $query = $storage->getQuery()
+        ->condition('type', $paragraph_type)
+        ->accessCheck(FALSE); // Paragraphs usually don't have access control
+
+      $paragraph_ids = $query->execute();
+
+      if (empty($paragraph_ids)) {
+        return $results;
+      }
+
+      $paragraphs = $storage->loadMultiple($paragraph_ids);
+
+      foreach ($paragraphs as $paragraph) {
+        if (!empty($langcode)) {
+          if ($paragraph->hasTranslation($langcode)) {
+            $paragraph = $paragraph->getTranslation($langcode);
+            $processed = [];
+            $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+          }
+        }
+        else {
+          $processed = [];
+          $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error searching paragraph type @type: @message', [
+        '@type' => $paragraph_type,
+        '@message' => $e->getMessage(),
+      ]);
     }
 
     return $results;
@@ -231,19 +312,22 @@ class TextSearchService {
           if (!empty($langcode)) {
             if ($entity->hasTranslation($langcode)) {
               $entity = $entity->getTranslation($langcode);
-              $this->searchEntity($entity, $search_term, $use_regex, $results);
+              $processed = [];
+              $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
             }
           }
           else {
             $languages = $entity->getTranslationLanguages();
             foreach ($languages as $translation_langcode => $language) {
               $translation = $entity->getTranslation($translation_langcode);
-              $this->searchEntity($translation, $search_term, $use_regex, $results);
+              $processed = [];
+              $this->searchEntity($translation, $search_term, $use_regex, $results, $processed);
             }
           }
         }
         else {
-          $this->searchEntity($entity, $search_term, $use_regex, $results);
+          $processed = [];
+          $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
         }
       }
     }
@@ -260,9 +344,17 @@ class TextSearchService {
   /**
    * Search within an entity.
    */
-  protected function searchEntity(EntityInterface $entity, $search_term, $use_regex, array &$results) {
+  protected function searchEntity(EntityInterface $entity, $search_term, $use_regex, array &$results, array &$processed = []) {
     $entity_type_id = $entity->getEntityTypeId();
     $bundle = $entity->bundle();
+    $entity_id = $entity->id();
+    
+    // Prevent infinite recursion by tracking processed entities.
+    $entity_key = $entity_type_id . ':' . $entity_id;
+    if (isset($processed[$entity_key])) {
+      return;
+    }
+    $processed[$entity_key] = TRUE;
 
     // Get field definitions.
     $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity_type_id, $bundle);
@@ -281,17 +373,50 @@ class TextSearchService {
 
     // Search in fields.
     foreach ($field_definitions as $field_name => $field_definition) {
-      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
-        continue;
-      }
-
       if (!$entity->hasField($field_name)) {
         continue;
       }
 
-      $field_values = $entity->get($field_name)->getValue();
-      foreach ($field_values as $delta => $value) {
-        $text = $value['value'] ?? '';
+      $field_type = $field_definition->getType();
+      
+      // Handle text fields.
+      if (in_array($field_type, $this->searchableFieldTypes)) {
+        $this->searchTextField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
+      }
+      // Handle entity reference fields (Paragraphs, VLSuite, etc.).
+      elseif (in_array($field_type, $this->referenceFieldTypes)) {
+        $this->searchReferenceField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed);
+      }
+      // Handle complex fields that may contain text.
+      elseif (in_array($field_type, $this->complexFieldTypes)) {
+        $this->searchComplexField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
+      }
+    }
+  }
+
+  /**
+   * Search within a text field.
+   */
+  protected function searchTextField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results) {
+    $field_values = $entity->get($field_name)->getValue();
+    foreach ($field_values as $delta => $value) {
+      // Handle different text field structures
+      $searchable_parts = [];
+      
+      if (isset($value['value']) && !empty($value['value'])) {
+        $searchable_parts['value'] = $value['value'];
+      }
+      
+      if (isset($value['summary']) && !empty($value['summary'])) {
+        $searchable_parts['summary'] = $value['summary'];
+      }
+      
+      // If no structured parts, try direct value
+      if (empty($searchable_parts) && is_string($value)) {
+        $searchable_parts['value'] = $value;
+      }
+      
+      foreach ($searchable_parts as $part_name => $text) {
         if (empty($text)) {
           continue;
         }
@@ -299,10 +424,126 @@ class TextSearchService {
         $matches = $this->searchInText($text, $search_term, $use_regex);
         if (!empty($matches)) {
           foreach ($matches as $match) {
-            $results[] = $this->createResultItem($entity, $field_name, $field_definition->getLabel(), $match);
+            $field_label = $field_definition->getLabel();
+            if ($part_name === 'summary') {
+              $field_label .= ' (Summary)';
+            }
+            $results[] = $this->createResultItem($entity, $field_name, $field_label, $match);
           }
         }
       }
+    }
+  }
+
+  /**
+   * Search within an entity reference field recursively.
+   */
+  protected function searchReferenceField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed) {
+    try {
+      $field_items = $entity->get($field_name);
+      
+      foreach ($field_items as $item) {
+        $referenced_entity = $item->entity;
+        if (!$referenced_entity) {
+          continue;
+        }
+
+        // Search recursively in the referenced entity.
+        $this->searchEntity($referenced_entity, $search_term, $use_regex, $results, $processed);
+      }
+    }
+    catch (\Exception $e) {
+      // Log the error but continue with other fields.
+      $this->loggerFactory->get('content_radar')->warning('Error searching reference field @field in entity @type:@id: @message', [
+        '@field' => $field_name,
+        '@type' => $entity->getEntityTypeId(),
+        '@id' => $entity->id(),
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Search within a complex field that may contain text.
+   */
+  protected function searchComplexField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results) {
+    try {
+      $field_items = $entity->get($field_name);
+      
+      foreach ($field_items as $delta => $item) {
+        $field_type = $field_definition->getType();
+        $searchable_values = [];
+        
+        switch ($field_type) {
+          case 'link':
+            // Search in both title and uri
+            if (!empty($item->title)) {
+              $searchable_values['title'] = $item->title;
+            }
+            if (!empty($item->uri)) {
+              $searchable_values['uri'] = $item->uri;
+            }
+            break;
+            
+          case 'image':
+          case 'file':
+            // Search in alt text, title, description
+            if (!empty($item->alt)) {
+              $searchable_values['alt'] = $item->alt;
+            }
+            if (!empty($item->title)) {
+              $searchable_values['title'] = $item->title;
+            }
+            if (!empty($item->description)) {
+              $searchable_values['description'] = $item->description;
+            }
+            break;
+            
+          case 'text_with_summary':
+            // Search in both value and summary
+            if (!empty($item->value)) {
+              $searchable_values['value'] = $item->value;
+            }
+            if (!empty($item->summary)) {
+              $searchable_values['summary'] = $item->summary;
+            }
+            break;
+            
+          case 'formatted_text':
+            // Search in value
+            if (!empty($item->value)) {
+              $searchable_values['value'] = $item->value;
+            }
+            break;
+        }
+        
+        // Search in all collected values
+        foreach ($searchable_values as $property => $text) {
+          if (empty($text)) {
+            continue;
+          }
+          
+          $matches = $this->searchInText($text, $search_term, $use_regex);
+          if (!empty($matches)) {
+            foreach ($matches as $match) {
+              $field_label = $field_definition->getLabel();
+              if ($property !== 'value') {
+                $field_label .= ' (' . ucfirst($property) . ')';
+              }
+              $results[] = $this->createResultItem($entity, $field_name, $field_label, $match);
+            }
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Log the error but continue with other fields.
+      $this->loggerFactory->get('content_radar')->warning('Error searching complex field @field in entity @type:@id: @message', [
+        '@field' => $field_name,
+        '@type' => $entity->getEntityTypeId(),
+        '@id' => $entity->id(),
+        '@message' => $e->getMessage(),
+      ]);
     }
   }
 
@@ -614,6 +855,69 @@ class TextSearchService {
   }
 
   /**
+   * Replace text within a specific paragraph type.
+   */
+  protected function replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+    $count = 0;
+    $affected_entities = [];
+
+    try {
+      $storage = $this->entityTypeManager->getStorage('paragraph');
+      $query = $storage->getQuery()
+        ->condition('type', $paragraph_type)
+        ->accessCheck(FALSE);
+
+      $paragraph_ids = $query->execute();
+
+      if (empty($paragraph_ids)) {
+        return ['count' => 0, 'entities' => []];
+      }
+
+      $paragraphs = $storage->loadMultiple($paragraph_ids);
+
+      foreach ($paragraphs as $paragraph) {
+        if (!empty($langcode)) {
+          if ($paragraph->hasTranslation($langcode)) {
+            $translation = $paragraph->getTranslation($langcode);
+            $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run);
+            if ($result['modified']) {
+              $count += $result['count'];
+              $affected_entities[] = [
+                'entity_type' => 'paragraph',
+                'id' => $paragraph->id(),
+                'title' => $translation->label() ?: 'Paragraph ' . $paragraph->id(),
+                'type' => $paragraph->bundle(),
+                'langcode' => $langcode,
+              ];
+            }
+          }
+        }
+        else {
+          $result = $this->replaceInEntity($paragraph, $search_term, $replace_term, $use_regex, $dry_run);
+          if ($result['modified']) {
+            $count += $result['count'];
+            $affected_entities[] = [
+              'entity_type' => 'paragraph',
+              'id' => $paragraph->id(),
+              'title' => $paragraph->label() ?: 'Paragraph ' . $paragraph->id(),
+              'type' => $paragraph->bundle(),
+              'langcode' => $paragraph->language()->getId(),
+            ];
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error replacing in paragraph type @type: @message', [
+        '@type' => $paragraph_type,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+
+    return ['count' => $count, 'entities' => $affected_entities];
+  }
+
+  /**
    * Replace text within a specific entity type.
    */
   protected function replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
@@ -833,6 +1137,13 @@ class TextSearchService {
       'media',
       'menu_link_content',
       'comment',
+      'paragraph',
+      'webform_submission',
+      'commerce_product',
+      'commerce_product_variation',
+      'commerce_order',
+      'custom_block',
+      'profile',
     ];
 
     foreach ($searchable_types as $entity_type_id) {

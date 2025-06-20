@@ -234,6 +234,7 @@ class UndoConfirmForm extends ConfirmFormBase {
             [],
             $entity_info['langcode'],
             FALSE,
+            [],
             []
           );
 
