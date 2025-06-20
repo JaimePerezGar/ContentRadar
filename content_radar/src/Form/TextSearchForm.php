@@ -279,17 +279,6 @@ class TextSearchForm extends FormBase {
         '#attributes' => ['class' => ['content-radar-results-container']],
       ];
 
-      // Add select all checkbox.
-      if ($results['total'] > 0 && $this->currentUser->hasPermission('replace content radar')) {
-        $form['results_container']['select_all'] = [
-          '#type' => 'checkbox',
-          '#title' => $this->t('Select all results'),
-          '#attributes' => [
-            'class' => ['form-checkbox'],
-            'id' => 'select-all-results',
-          ],
-        ];
-      }
 
       // Group results by entity type.
       $grouped_results = [];
@@ -320,19 +309,12 @@ class TextSearchForm extends FormBase {
         ]),
       ];
 
-      // Add checkboxes for each result if user can replace.
+      // Create a container for selected items that will be populated by JavaScript
       if ($this->currentUser->hasPermission('replace content radar')) {
-        foreach ($results['items'] as $index => $item) {
-          $key = $item['entity_type'] . ':' . $item['id'] . ':' . $item['field_name'] . ':' . $item['langcode'];
-          $form['results_container']['selected_items'][$key] = [
-            '#type' => 'checkbox',
-            '#default_value' => FALSE,
-            '#attributes' => [
-              'class' => ['result-item-checkbox'],
-              'data-entity-type' => $item['entity_type'],
-            ],
-          ];
-        }
+        $form['results_container']['selected_items'] = [
+          '#tree' => TRUE,
+          '#type' => 'container',
+        ];
       }
     }
 

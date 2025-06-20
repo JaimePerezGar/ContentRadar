@@ -1,0 +1,29 @@
+/**
+ * @file
+ * Minimal styles for Content Radar module.
+ */
+
+/* Ensure text extracts are readable */
+.text-extract {
+  max-width: 400px;
+  overflow-wrap: break-word;
+}
+
+.text-extract mark {
+  background-color: #ffeb3b;
+  padding: 0.1em 0.2em;
+  font-weight: bold;
+}
+
+/* Results header styling */
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.results-summary {
+  margin-bottom: 1rem;
+  font-weight: bold;
+}

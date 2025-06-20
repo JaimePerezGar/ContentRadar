@@ -75,10 +75,7 @@
                 <td>{{ entity_info.type }}</td>
                 <td>{{ entity_info.langcode }}</td>
                 <td>
-                  {% set entity = drupal_entity(entity_info.entity_type, entity_info.id) %}
-                  {% if entity %}
-                    <a href="{{ path('entity.' ~ entity_info.entity_type ~ '.canonical', {entity_info.entity_type: entity_info.id}) }}">{{ 'View'|t }}</a>
-                  {% endif %}
+                  <a href="{{ path('entity.' ~ entity_info.entity_type ~ '.canonical', {(entity_info.entity_type): entity_info.id}) }}">{{ 'View'|t }}</a>
                 </td>
               </tr>
             {% endif %}

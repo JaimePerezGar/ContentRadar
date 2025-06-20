@@ -2,15 +2,6 @@
 /**
  * @file
  * Template for Content Radar search results.
- *
- * Available variables:
- * - results: Array of all result items.
- * - grouped_results: Results grouped by entity type.
- * - total: Total number of results.
- * - search_term: The search term used.
- * - is_regex: Whether regex was used.
- * - langcode: Language code searched.
- * - export_url: URL to export results as CSV.
  */
 #}
 <div class="content-radar-results">
@@ -31,19 +22,69 @@
       {% endif %}
     </div>
 
-    {% for entity_type, items in grouped_results %}
-      <details class="entity-type-group" open>
-        <summary>
-          {{ entity_type|capitalize }} ({{ items|length }})
-          <input type="checkbox" class="select-group-checkbox" data-entity-type="{{ entity_type }}">
-        </summary>
-        <div class="entity-type-results">
-          {% for item in items %}
-            {{ {'#theme': 'content_radar_result_item', '#item': item} }}
-          {% endfor %}
-        </div>
-      </details>
-    {% endfor %}
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="select-all-results" class="form-checkbox"></th>
+          <th>{{ 'Entity Type'|t }}</th>
+          <th>{{ 'Title'|t }}</th>
+          <th>{{ 'Field'|t }}</th>
+          <th>{{ 'Text Extract'|t }}</th>
+          <th>{{ 'Language'|t }}</th>
+          <th>{{ 'Status'|t }}</th>
+          <th>{{ 'Actions'|t }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in results %}
+          {% set checkbox_key = item.entity_type ~ ':' ~ item.id ~ ':' ~ item.field_name ~ ':' ~ item.langcode %}
+          <tr>
+            <td>
+              <input type="checkbox" 
+                     name="selected_items[{{ checkbox_key }}]" 
+                     value="1" 
+                     class="result-item-checkbox form-checkbox" 
+                     data-entity-type="{{ item.entity_type }}">
+            </td>
+            <td>
+              <span class="badge">{{ item.entity_type }}</span>
+            </td>
+            <td>
+              <strong>{{ item.title }}</strong>
+              <br>
+              <small>{{ item.content_type }}</small>
+            </td>
+            <td>{{ item.field_label }}</td>
+            <td>
+              <div class="text-extract">{{ item.extract|raw }}</div>
+            </td>
+            <td>{{ item.language }}</td>
+            <td>
+              {% if item.status is not null %}
+                {% if item.status %}
+                  <span class="status status--published">{{ 'Published'|t }}</span>
+                {% else %}
+                  <span class="status status--unpublished">{{ 'Unpublished'|t }}</span>
+                {% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              {% if item.entity.toUrl is defined %}
+                <a href="{{ path(item.entity.toUrl.getRouteName, item.entity.toUrl.getRouteParameters) }}" class="button button--small">{{ 'View'|t }}</a>
+                {% if item.entity.hasLinkTemplate('edit-form') %}
+                  <a href="{{ path(item.entity.toUrl('edit-form').getRouteName, item.entity.toUrl('edit-form').getRouteParameters) }}" class="button button--small">{{ 'Edit'|t }}</a>
+                {% endif %}
+              {% else %}
+                <a href="{{ path('entity.' ~ item.entity_type ~ '.canonical', {(item.entity_type): item.id}) }}" class="button button--small">{{ 'View'|t }}</a>
+                <a href="{{ path('entity.' ~ item.entity_type ~ '.edit_form', {(item.entity_type): item.id}) }}" class="button button--small">{{ 'Edit'|t }}</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   {% else %}
     <div class="no-results">
       {{ 'No results found.'|t }}
