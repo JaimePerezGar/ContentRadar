@@ -167,22 +167,69 @@ class UndoConfirmForm extends ConfirmFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $details = unserialize($this->report['details']);
-    $undone_count = 0;
-    $failed_count = 0;
 
-    // Perform the undo by replacing back.
-    foreach ($details as $entity_info) {
+    // Set up batch process for undo operation.
+    $batch = [
+      'title' => $this->t('Processing undo operation'),
+      'operations' => [],
+      'init_message' => $this->t('Starting undo operation...'),
+      'progress_message' => $this->t('Processed @current out of @total entities.'),
+      'error_message' => $this->t('An error occurred during undo processing.'),
+      'finished' => '\Drupal\content_radar\Form\UndoConfirmForm::batchFinished',
+    ];
+
+    // Process entities in chunks.
+    $chunks = array_chunk($details, 10);
+    
+    foreach ($chunks as $chunk) {
+      $batch['operations'][] = [
+        '\Drupal\content_radar\Form\UndoConfirmForm::batchProcess',
+        [
+          $chunk,
+          $this->report['replace_term'],
+          $this->report['search_term'],
+          (bool) $this->report['use_regex'],
+          $this->report['langcode'],
+          $this->rid,
+        ],
+      ];
+    }
+
+    batch_set($batch);
+  }
+
+  /**
+   * Batch process callback for undo operations.
+   */
+  public static function batchProcess($chunk, $replace_term, $search_term, $use_regex, $langcode, $original_rid, &$context) {
+    $text_search_service = \Drupal::service('content_radar.search_service');
+    $entity_type_manager = \Drupal::entityTypeManager();
+    
+    // Initialize context results.
+    if (!isset($context['results']['undone_count'])) {
+      $context['results']['undone_count'] = 0;
+      $context['results']['failed_count'] = 0;
+      $context['results']['affected_entities'] = [];
+      $context['results']['search_term'] = $search_term;
+      $context['results']['replace_term'] = $replace_term;
+      $context['results']['use_regex'] = $use_regex;
+      $context['results']['langcode'] = $langcode;
+      $context['results']['original_rid'] = $original_rid;
+    }
+    
+    // Process each entity in the chunk.
+    foreach ($chunk as $entity_info) {
       try {
-        $entity = $this->entityTypeManager
+        $entity = $entity_type_manager
           ->getStorage($entity_info['entity_type'])
           ->load($entity_info['id']);
 
         if ($entity) {
-          // Use the service to replace back.
-          $result = $this->textSearchService->replaceText(
-            $this->report['replace_term'],
-            $this->report['search_term'],
-            (bool) $this->report['use_regex'],
+          // Use the service to replace back (undo the original replacement).
+          $result = $text_search_service->replaceText(
+            $replace_term,
+            $search_term,
+            $use_regex,
             [$entity_info['entity_type']],
             [],
             $entity_info['langcode'],
@@ -191,39 +238,81 @@ class UndoConfirmForm extends ConfirmFormBase {
           );
 
           if ($result['replaced_count'] > 0) {
-            $undone_count++;
+            $context['results']['undone_count']++;
+            $context['results']['affected_entities'] = array_merge(
+              $context['results']['affected_entities'],
+              $result['affected_entities']
+            );
           }
         }
       }
       catch (\Exception $e) {
-        $failed_count++;
+        $context['results']['failed_count']++;
         \Drupal::logger('content_radar')->error('Failed to undo changes for entity @type:@id: @message', [
           '@type' => $entity_info['entity_type'],
           '@id' => $entity_info['id'],
           '@message' => $e->getMessage(),
         ]);
       }
+      
+      // Update progress message.
+      $context['message'] = t('Undoing changes in: @title', [
+        '@title' => isset($entity_info['title']) ? $entity_info['title'] : $entity_info['id'],
+      ]);
     }
+  }
 
-    // Update the report to mark as undone.
-    $this->database->update('content_radar_reports')
-      ->fields(['details' => serialize(['undone' => TRUE, 'undone_time' => time()])])
-      ->condition('rid', $this->rid)
-      ->execute();
+  /**
+   * Batch finished callback for undo operations.
+   */
+  public static function batchFinished($success, $results, $operations) {
+    $database = \Drupal::database();
+    
+    if ($success && !empty($results['undone_count'])) {
+      // Create a new report for the undo operation.
+      $new_rid = $database->insert('content_radar_reports')
+        ->fields([
+          'uid' => \Drupal::currentUser()->id(),
+          'created' => \Drupal::time()->getRequestTime(),
+          'search_term' => $results['replace_term'], // What we searched for (original replace term)
+          'replace_term' => $results['search_term'], // What we replaced it with (original search term)
+          'use_regex' => $results['use_regex'] ? 1 : 0,
+          'langcode' => $results['langcode'],
+          'total_replacements' => $results['undone_count'],
+          'affected_entities' => count($results['affected_entities']),
+          'details' => serialize($results['affected_entities']),
+        ])
+        ->execute();
 
-    if ($undone_count > 0) {
-      $this->messenger()->addStatus($this->t('Successfully undone changes in @count entities.', [
-        '@count' => $undone_count,
+      // Mark the original report as undone.
+      $database->update('content_radar_reports')
+        ->fields(['details' => serialize(['undone' => TRUE, 'undone_time' => time(), 'undo_report_id' => $new_rid])])
+        ->condition('rid', $results['original_rid'])
+        ->execute();
+
+      \Drupal::messenger()->addStatus(t('Successfully undone changes in @count entities. A new report has been created.', [
+        '@count' => $results['undone_count'],
       ]));
-    }
 
-    if ($failed_count > 0) {
-      $this->messenger()->addWarning($this->t('Failed to undo changes in @count entities.', [
-        '@count' => $failed_count,
-      ]));
-    }
+      if (!empty($results['failed_count'])) {
+        \Drupal::messenger()->addWarning(t('Failed to undo changes in @count entities.', [
+          '@count' => $results['failed_count'],
+        ]));
+      }
 
-    $form_state->setRedirect('content_radar.reports');
+      // Redirect to the new report.
+      $url = \Drupal\Core\Url::fromRoute('content_radar.report_detail', ['rid' => $new_rid]);
+      $redirect = new \Symfony\Component\HttpFoundation\RedirectResponse($url->toString());
+      $redirect->send();
+    }
+    else {
+      \Drupal::messenger()->addError(t('An error occurred during the undo process or no changes were undone.'));
+      
+      // Redirect to reports list.
+      $url = \Drupal\Core\Url::fromRoute('content_radar.reports');
+      $redirect = new \Symfony\Component\HttpFoundation\RedirectResponse($url->toString());
+      $redirect->send();
+    }
   }
 
 }

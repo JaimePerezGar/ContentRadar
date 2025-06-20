@@ -2,3 +2,9 @@ search:
   version: 1.x
   js:
     js/content-radar.js: {}
+  css:
+    theme:
+      css/content-radar.css: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
