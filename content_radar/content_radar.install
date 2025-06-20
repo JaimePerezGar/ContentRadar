@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the ContentRadar module.
+ * Install, update and uninstall functions for the Content Radar module.
  */
 
 use Drupal\Core\Database\Database;
@@ -37,6 +37,11 @@ function content_radar_schema() {
         'not null' => TRUE,
         'default' => 0,
         'description' => 'Whether regular expressions were used.',
+      ],
+      'entity_types' => [
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => 'Serialized array of entity types searched.',
       ],
       'content_types' => [
         'type' => 'text',
@@ -114,11 +119,11 @@ function content_radar_schema() {
         'default' => 0,
         'description' => 'Total number of text replacements made.',
       ],
-      'nodes_affected' => [
+      'affected_entities' => [
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
-        'description' => 'Number of nodes affected.',
+        'description' => 'Number of entities affected.',
       ],
       'details' => [
         'type' => 'blob',
@@ -140,17 +145,7 @@ function content_radar_schema() {
  * Implements hook_install().
  */
 function content_radar_install() {
-  // Ensure the schema is created
-  $schema = content_radar_schema();
-  $database = \Drupal::database();
-  
-  foreach ($schema as $table_name => $table_schema) {
-    if (!$database->schema()->tableExists($table_name)) {
-      $database->schema()->createTable($table_name, $table_schema);
-    }
-  }
-  
-  \Drupal::messenger()->addStatus(t('ContentRadar module has been installed successfully.'));
+  \Drupal::messenger()->addStatus(t('Content Radar module has been installed successfully.'));
 }
 
 /**
@@ -159,16 +154,4 @@ function content_radar_install() {
 function content_radar_uninstall() {
   // Clean up any cached search results.
   \Drupal::cache()->deleteAll();
-  
-  \Drupal::messenger()->addStatus(t('ContentRadar module has been uninstalled successfully.'));
-}
-
-/**
- * Create the content_radar_reports table.
- */
-function content_radar_update_8001() {
-  $schema = content_radar_schema();
-  if (!Database::getConnection()->schema()->tableExists('content_radar_reports')) {
-    Database::getConnection()->schema()->createTable('content_radar_reports', $schema['content_radar_reports']);
-  }
 }

@@ -1,6 +1,6 @@
 name: 'Content Radar'
 type: module
-description: 'Advanced content search and analysis tool for administrators to find, analyze and manage content across all text fields with multilingual support.'
+description: 'Advanced content search and replace tool for finding and managing text across all entities.'
 package: Content Management
 core_version_requirement: ^10 || ^11
 dependencies:

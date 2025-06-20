@@ -2,7 +2,7 @@
 
 /**
  * @file
- * ContentRadar module file.
+ * Content Radar module file.
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
@@ -14,19 +14,23 @@ function content_radar_help($route_name, RouteMatchInterface $route_match) {
   switch ($route_name) {
     case 'help.page.content_radar':
       $output = '<h3>' . t('About') . '</h3>';
-      $output .= '<p>' . t('The ContentRadar module provides an advanced search and analysis tool for administrators to find, analyze and manage content across all text fields.') . '</p>';
+      $output .= '<p>' . t('The Content Radar module provides an advanced search and replace tool for finding and managing text across all entities.') . '</p>';
       $output .= '<h3>' . t('Features') . '</h3>';
       $output .= '<ul>';
-      $output .= '<li>' . t('Search across all text fields in content') . '</li>';
+      $output .= '<li>' . t('Search text across all entity types and fields') . '</li>';
       $output .= '<li>' . t('Support for regular expressions') . '</li>';
-      $output .= '<li>' . t('Context display with highlighted matches') . '</li>';
-      $output .= '<li>' . t('Direct links to view and edit content') . '</li>';
+      $output .= '<li>' . t('Find and replace functionality with individual selection') . '</li>';
+      $output .= '<li>' . t('Detailed reports with undo capability') . '</li>';
       $output .= '<li>' . t('Export results to CSV') . '</li>';
+      $output .= '<li>' . t('Multilingual support') . '</li>';
       $output .= '</ul>';
       return $output;
 
     case 'content_radar.search':
-      return '<p>' . t('Search for text across all content fields. You can use regular expressions by enabling the checkbox.') . '</p>';
+      return '<p>' . t('Search for text across all content. You can use regular expressions, filter by entity type and language, and optionally replace found text.') . '</p>';
+
+    case 'content_radar.reports':
+      return '<p>' . t('View reports of all text replacements made. Each report includes details of what was changed and provides an option to revert the changes.') . '</p>';
   }
 }
 
@@ -47,14 +51,12 @@ function content_radar_theme($existing, $type, $theme, $path) {
         'export_url' => NULL,
       ],
       'template' => 'content-radar-results',
-      'path' => $path . '/templates',
     ],
     'content_radar_result_item' => [
       'variables' => [
         'item' => [],
       ],
       'template' => 'content-radar-result-item',
-      'path' => $path . '/templates',
     ],
     'content_radar_report_details' => [
       'variables' => [
@@ -67,7 +69,6 @@ function content_radar_theme($existing, $type, $theme, $path) {
         'undo_url' => NULL,
       ],
       'template' => 'content-radar-report-details',
-      'path' => $path . '/templates',
     ],
   ];
 }

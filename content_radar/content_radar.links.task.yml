@@ -1,5 +1,9 @@
 content_radar.search_tab:
   route_name: content_radar.search
-  title: 'Content Radar'
-  base_route: system.admin_content
-  weight: 100
+  title: 'Search'
+  base_route: content_radar.search
+
+content_radar.reports_tab:
+  route_name: content_radar.reports
+  title: 'Reports'
+  base_route: content_radar.reports

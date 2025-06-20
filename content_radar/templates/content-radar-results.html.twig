@@ -1,120 +1,52 @@
 {#
 /**
  * @file
- * Default theme implementation for ContentRadar results.
+ * Template for Content Radar search results.
  *
  * Available variables:
- * - results: Array of search results.
- * - pager: The pager element.
+ * - results: Array of all result items.
+ * - grouped_results: Results grouped by entity type.
  * - total: Total number of results.
  * - search_term: The search term used.
  * - is_regex: Whether regex was used.
- * - langcode: The language code searched.
- * - grouped_results: Results grouped by content type.
- *
- * @ingroup themeable
+ * - langcode: Language code searched.
+ * - export_url: URL to export results as CSV.
  */
 #}
 <div class="content-radar-results">
+  <div class="results-header">
+    <h3>{{ 'Search Results'|t }}</h3>
+    <div class="results-actions">
+      {% if export_url %}
+        <a href="{{ export_url }}" class="button button--small">{{ 'Export to CSV'|t }}</a>
+      {% endif %}
+    </div>
+  </div>
+
   {% if total > 0 %}
-    <div class="results-header">
-      <div class="results-summary">
-        <h3>
-          {{ 'Found @count matches for'|t({'@count': total}) }} 
-          <strong>"{{ search_term }}"</strong>
-        </h3>
-        {% if langcode %}
-          <span class="language-badge">{{ 'Language: @lang'|t({'@lang': langcode}) }}</span>
-        {% endif %}
-        {% if is_regex %}
-          <span class="regex-badge">{{ 'RegEx'|t }}</span>
-        {% endif %}
-      </div>
-      
-      <div class="results-actions">
-        {% if export_url %}
-          <a href="{{ export_url }}" class="button button--small button--secondary" target="_blank">
-            {{ 'Export CSV'|t }}
-          </a>
-        {% endif %}
-      </div>
+    <div class="results-summary">
+      {{ 'Found @count results for "@term"'|t({'@count': total, '@term': search_term}) }}
+      {% if langcode %}
+        {{ 'in @language'|t({'@language': langcode}) }}
+      {% endif %}
     </div>
-    
-    <div class="results-content">
-      <div class="results-table-wrapper">
-        <table class="content-radar-table">
-          <thead>
-            <tr>
-              <th>{{ 'Content Type'|t }}</th>
-              <th>{{ 'ID'|t }}</th>
-              <th>{{ 'Title'|t }}</th>
-              <th>{{ 'Language'|t }}</th>
-              <th>{{ 'Field'|t }}</th>
-              <th>{{ 'Extract'|t }}</th>
-              <th>{{ 'Status'|t }}</th>
-              <th>{{ 'Modified'|t }}</th>
-              <th>{{ 'Actions'|t }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% if grouped_results %}
-              {% set content_types = sort_alphabetically ? grouped_results|keys|sort : grouped_results|keys %}
-              {% for content_type in content_types %}
-                {% set items = grouped_results[content_type] %}
-                {% for item in items %}
-                  <tr class="{{ item.status ? '' : 'unpublished' }}{{ loop.first ? ' content-type-first' : '' }}">
-                    <td class="content-type-cell">{{ content_type }}</td>
-                    <td class="id-cell">#{{ item.id }}</td>
-                    <td class="title-cell">
-                      <a href="{{ item.view_url }}" target="_blank">{{ item.title }}</a>
-                      {% if not item.status %}
-                        <span class="status-badge unpublished">{{ 'Unpublished'|t }}</span>
-                      {% endif %}
-                    </td>
-                    <td class="language-cell">{{ item.language }}</td>
-                    <td class="field-cell">{{ item.field_label }}</td>
-                    <td class="extract-cell">
-                      <div class="extract-content">{{ item.extract|raw }}</div>
-                      {% if item.usage and item.usage is not empty %}
-                        <div class="usage-info">
-                          <span class="usage-label">{{ 'Used in:'|t }}</span>
-                          {% for usage in item.usage %}
-                            <a href="{{ usage.url }}" target="_blank" class="usage-link">{{ usage.title }}</a>{% if not loop.last %}, {% endif %}
-                          {% endfor %}
-                        </div>
-                      {% endif %}
-                    </td>
-                    <td class="status-cell">
-                      {{ item.status ? 'Published'|t : 'Unpublished'|t }}
-                    </td>
-                    <td class="date-cell">{{ item.changed }}</td>
-                    <td class="actions-cell">
-                      <ul class="links inline">
-                        <li class="view"><a href="{{ item.view_url }}" target="_blank">{{ 'View'|t }}</a></li>
-                        {% if item.edit_url %}
-                          <li class="edit"><a href="{{ item.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
-                        {% endif %}
-                      </ul>
-                    </td>
-                  </tr>
-                {% endfor %}
-              {% endfor %}
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    
-    <div class="results-footer">
-      {{ pager }}
-    </div>
+
+    {% for entity_type, items in grouped_results %}
+      <details class="entity-type-group" open>
+        <summary>
+          {{ entity_type|capitalize }} ({{ items|length }})
+          <input type="checkbox" class="select-group-checkbox" data-entity-type="{{ entity_type }}">
+        </summary>
+        <div class="entity-type-results">
+          {% for item in items %}
+            {{ {'#theme': 'content_radar_result_item', '#item': item} }}
+          {% endfor %}
+        </div>
+      </details>
+    {% endfor %}
   {% else %}
     <div class="no-results">
-      <h3>{{ 'No results found'|t }}</h3>
-      <p>{{ 'No matches found for "@term"'|t({'@term': search_term}) }}</p>
-      {% if is_regex %}
-        <p class="help-text">{{ 'Check your regular expression syntax and try again.'|t }}</p>
-      {% endif %}
+      {{ 'No results found.'|t }}
     </div>
   {% endif %}
 </div>

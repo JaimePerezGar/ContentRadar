@@ -1,26 +1,34 @@
 {#
 /**
  * @file
- * Default theme implementation for Content Radar report details.
+ * Template for Content Radar report details.
  *
  * Available variables:
  * - report: The report object.
- * - summary: Report summary information.
- * - details: Detailed information about affected entities.
- *
- * @ingroup themeable
+ * - summary: Summary information array.
+ * - details: Detailed replacement information.
+ * - back_url: URL to go back to reports list.
+ * - export_url: URL to export report.
+ * - show_undo: Whether to show undo button.
+ * - undo_url: URL to undo changes.
  */
 #}
-{{ attach_library('core/drupal.ajax') }}
-{{ attach_library('core/drupal.dialog.ajax') }}
 <div class="content-radar-report-details">
+  <div class="report-actions">
+    <a href="{{ back_url }}" class="button">{{ 'Back to reports'|t }}</a>
+    <a href="{{ export_url }}" class="button">{{ 'Export CSV'|t }}</a>
+    {% if show_undo %}
+      <a href="{{ undo_url }}" class="button button--danger">{{ 'Undo changes'|t }}</a>
+    {% endif %}
+  </div>
+
   <div class="report-summary">
-    <h2>{{ 'Report Summary'|t }}</h2>
+    <h3>{{ 'Report Summary'|t }}</h3>
     <dl>
       <dt>{{ 'Date'|t }}</dt>
-      <dd>{{ summary.date }}</dd>
+      <dd>{{ summary.created }}</dd>
       
-      <dt>{{ 'Performed by'|t }}</dt>
+      <dt>{{ 'User'|t }}</dt>
       <dd>{{ summary.user }}</dd>
       
       <dt>{{ 'Search term'|t }}</dt>
@@ -29,73 +37,54 @@
       <dt>{{ 'Replace term'|t }}</dt>
       <dd><code>{{ summary.replace_term }}</code></dd>
       
+      <dt>{{ 'Regular expression'|t }}</dt>
+      <dd>{{ summary.use_regex }}</dd>
+      
       <dt>{{ 'Language'|t }}</dt>
       <dd>{{ summary.language }}</dd>
       
-      <dt>{{ 'Use regex'|t }}</dt>
-      <dd>{{ summary.use_regex }}</dd>
-      
       <dt>{{ 'Total replacements'|t }}</dt>
-      <dd><strong>{{ summary.total_replacements }}</strong></dd>
+      <dd>{{ summary.total_replacements }}</dd>
       
-      <dt>{{ 'Entities affected'|t }}</dt>
-      <dd><strong>{{ summary.entities_affected }}</strong></dd>
+      <dt>{{ 'Affected entities'|t }}</dt>
+      <dd>{{ summary.affected_entities }}</dd>
     </dl>
   </div>
 
   {% if details %}
     <div class="report-details">
       <h3>{{ 'Affected Entities'|t }}</h3>
-      <table class="content-radar-report-table">
+      <table class="table">
         <thead>
           <tr>
             <th>{{ 'Entity Type'|t }}</th>
-            <th>{{ 'Entity'|t }}</th>
-            <th>{{ 'Content Type'|t }}</th>
+            <th>{{ 'ID'|t }}</th>
+            <th>{{ 'Title'|t }}</th>
+            <th>{{ 'Bundle'|t }}</th>
             <th>{{ 'Language'|t }}</th>
-            <th>{{ 'Replacements'|t }}</th>
             <th>{{ 'Actions'|t }}</th>
           </tr>
         </thead>
         <tbody>
-          {% for entity in details %}
-            <tr>
-              <td>
-                <span class="entity-type-badge">{{ entity.entity_type }}</span>
-              </td>
-              <td>
-                {% if entity.url %}
-                  <a href="{{ entity.url }}" target="_blank">{{ entity.title }}</a>
-                {% else %}
-                  {{ entity.title }}
-                {% endif %}
-                <small>(ID: {{ entity.entity_id }})</small>
-              </td>
-              <td>{{ entity.type }}</td>
-              <td>{{ entity.langcode }}</td>
-              <td><strong>{{ entity.count }}</strong></td>
-              <td>
-                <ul class="links inline">
-                  {% if entity.url %}
-                    <li><a href="{{ entity.url }}" target="_blank">{{ 'View'|t }}</a></li>
+          {% for entity_info in details %}
+            {% if entity_info.entity_type is defined %}
+              <tr>
+                <td>{{ entity_info.entity_type }}</td>
+                <td>{{ entity_info.id }}</td>
+                <td>{{ entity_info.title }}</td>
+                <td>{{ entity_info.type }}</td>
+                <td>{{ entity_info.langcode }}</td>
+                <td>
+                  {% set entity = drupal_entity(entity_info.entity_type, entity_info.id) %}
+                  {% if entity %}
+                    <a href="{{ path('entity.' ~ entity_info.entity_type ~ '.canonical', {entity_info.entity_type: entity_info.id}) }}">{{ 'View'|t }}</a>
                   {% endif %}
-                  {% if entity.edit_url %}
-                    <li><a href="{{ entity.edit_url }}" target="_blank">{{ 'Edit'|t }}</a></li>
-                  {% endif %}
-                </ul>
-              </td>
-            </tr>
+                </td>
+              </tr>
+            {% endif %}
           {% endfor %}
         </tbody>
       </table>
     </div>
   {% endif %}
-
-  <div class="report-actions">
-    <a href="{{ back_url }}" class="button">{{ '← Back to reports'|t }}</a>
-    <a href="{{ export_url }}" class="button button--small">{{ 'Export CSV'|t }}</a>
-    {% if show_undo %}
-      <a href="{{ undo_url }}" class="button button--danger">{{ 'Undo replacements'|t }}</a>
-    {% endif %}
-  </div>
 </div>

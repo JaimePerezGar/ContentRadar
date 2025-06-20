@@ -3,12 +3,13 @@
 namespace Drupal\content_radar\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response;
+use Drupal\user\Entity\User;
 
 /**
  * Controller for Content Radar reports.
@@ -23,19 +24,14 @@ class ReportsController extends ControllerBase {
   protected $database;
 
   /**
-   * The date formatter service.
+   * The date formatter.
    *
    * @var \Drupal\Core\Datetime\DateFormatterInterface
    */
   protected $dateFormatter;
 
   /**
-   * Constructs a ReportsController object.
-   *
-   * @param \Drupal\Core\Database\Connection $database
-   *   The database connection.
-   * @param \Drupal\Core\Datetime\DateFormatterInterface $date_formatter
-   *   The date formatter service.
+   * Constructs a new ReportsController.
    */
   public function __construct(Connection $database, DateFormatterInterface $date_formatter) {
     $this->database = $database;
@@ -53,138 +49,56 @@ class ReportsController extends ControllerBase {
   }
 
   /**
-   * Displays the reports page.
-   *
-   * @return array
-   *   A render array.
+   * Display list of reports.
    */
-  public function reportsPage() {
-    $build = [];
-
-    // Add description.
-    $build['description'] = [
-      '#markup' => '<p>' . $this->t('This page shows all text replacement operations performed by Content Radar.') . '</p>',
-    ];
-
-    // Check if the table exists
-    if (!$this->database->schema()->tableExists('content_radar_reports')) {
-      $this->messenger()->addError($this->t('The reports table has not been created yet. Please run database updates.'));
-      $build['error'] = [
-        '#markup' => '<p>' . $this->t('To fix this issue:') . '</p>' .
-                     '<ol>' .
-                     '<li>' . $this->t('Run <code>drush updb</code> in your terminal') . '</li>' .
-                     '<li>' . $this->t('Or visit <a href="@url">the update page</a>', ['@url' => '/update.php']) . '</li>' .
-                     '<li>' . $this->t('Clear caches after running updates') . '</li>' .
-                     '</ol>',
-      ];
-      return $build;
-    }
-
-    // Get reports from database.
-    $query = $this->database->select('content_radar_reports', 'r')
-      ->fields('r')
-      ->orderBy('created', 'DESC')
-      ->extend('Drupal\Core\Database\Query\PagerSelectExtender')
-      ->limit(25);
-
-    $results = $query->execute()->fetchAll();
-
-    if (empty($results)) {
-      $build['no_results'] = [
-        '#markup' => '<p>' . $this->t('No replacement operations have been performed yet.') . '</p>',
-      ];
-      return $build;
-    }
-
-    // Build the table.
+  public function reportsList() {
     $header = [
-      $this->t('Date'),
-      $this->t('User'),
-      $this->t('Search Term'),
-      $this->t('Replace Term'),
-      $this->t('Language'),
-      $this->t('Replacements'),
-      $this->t('Entities Affected'),
-      $this->t('Actions'),
+      'created' => ['data' => $this->t('Date'), 'field' => 'created', 'sort' => 'desc'],
+      'user' => $this->t('User'),
+      'search_term' => $this->t('Search term'),
+      'replace_term' => $this->t('Replace term'),
+      'total_replacements' => ['data' => $this->t('Replacements'), 'field' => 'total_replacements'],
+      'affected_entities' => ['data' => $this->t('Entities'), 'field' => 'affected_entities'],
+      'operations' => $this->t('Operations'),
     ];
+
+    $query = $this->database->select('content_radar_reports', 'r')
+      ->extend('\Drupal\Core\Database\Query\TableSortExtender')
+      ->extend('\Drupal\Core\Database\Query\PagerSelectExtender');
+    $query->fields('r');
+    $query->orderByHeader($header);
+    $query->limit(50);
+
+    $results = $query->execute();
 
     $rows = [];
     foreach ($results as $report) {
-      $user = $this->entityTypeManager()->getStorage('user')->load($report->uid);
-      $username = $user ? $user->getDisplayName() : $this->t('Anonymous');
+      $user = User::load($report->uid);
+      $operations = [];
 
-      // Format language.
-      $language = $report->langcode ? $report->langcode : $this->t('All languages');
-
-      // Create view details link.
-      $view_link = Link::fromTextAndUrl(
-        $this->t('View details'),
-        Url::fromRoute('content_radar.report_details', ['rid' => $report->rid])
-      );
-
-      // Create export link.
-      $export_link = Link::fromTextAndUrl(
-        $this->t('Export CSV'),
-        Url::fromRoute('content_radar.report_export', ['rid' => $report->rid])
-      );
-
-      // Check if this is an undo operation.
-      $is_undo = FALSE;
-      $details = @unserialize($report->details);
-      if ($details && isset($details['undone_from'])) {
-        $is_undo = TRUE;
-      }
-
-      $operations = [
-        'view' => [
-          'title' => $this->t('View details'),
-          'url' => Url::fromRoute('content_radar.report_details', ['rid' => $report->rid]),
-        ],
-        'export' => [
-          'title' => $this->t('Export CSV'),
-          'url' => Url::fromRoute('content_radar.report_export', ['rid' => $report->rid]),
-        ],
+      $operations['view'] = [
+        'title' => $this->t('View'),
+        'url' => Url::fromRoute('content_radar.report_detail', ['rid' => $report->rid]),
       ];
 
-      // Add undo link if user has permission and this is not already an undo operation.
-      if ($this->currentUser()->hasPermission('replace content radar') && !$is_undo) {
-        $operations['undo'] = [
-          'title' => $this->t('Undo'),
-          'url' => Url::fromRoute('content_radar.report_undo', ['rid' => $report->rid]),
-          'attributes' => [
-            'class' => ['use-ajax'],
-            'data-dialog-type' => 'modal',
-            'data-dialog-options' => json_encode([
-              'width' => 700,
-            ]),
-          ],
-        ];
-      }
-
-      // Determine entity count label
-      $entity_count_label = $report->nodes_affected;
-      $details = @unserialize($report->details);
-      if ($details && is_array($details)) {
-        $entity_types = [];
-        foreach ($details as $entity_data) {
-          if (isset($entity_data['entity_type'])) {
-            $entity_types[$entity_data['entity_type']] = TRUE;
-          }
-        }
-        if (count($entity_types) > 1) {
-          $entity_count_label .= ' (' . $this->t('mixed types') . ')';
+      if ($this->currentUser()->hasPermission('undo content radar changes')) {
+        $details = unserialize($report->details);
+        if (!isset($details['undone'])) {
+          $operations['undo'] = [
+            'title' => $this->t('Undo'),
+            'url' => Url::fromRoute('content_radar.undo', ['rid' => $report->rid]),
+          ];
         }
       }
 
       $rows[] = [
-        $this->dateFormatter->format($report->created, 'short'),
-        $username,
-        $report->search_term,
-        $report->replace_term,
-        $language,
-        $report->total_replacements,
-        $entity_count_label,
-        [
+        'created' => $this->dateFormatter->format($report->created, 'short'),
+        'user' => $user ? Link::fromTextAndUrl($user->getDisplayName(), $user->toUrl())->toString() : $this->t('Anonymous'),
+        'search_term' => $report->search_term,
+        'replace_term' => $report->replace_term,
+        'total_replacements' => $report->total_replacements,
+        'affected_entities' => $report->affected_entities,
+        'operations' => [
           'data' => [
             '#type' => 'operations',
             '#links' => $operations,
@@ -197,13 +111,10 @@ class ReportsController extends ControllerBase {
       '#type' => 'table',
       '#header' => $header,
       '#rows' => $rows,
-      '#empty' => $this->t('No reports found.'),
-      '#attributes' => [
-        'class' => ['content-radar-reports-table'],
-      ],
+      '#empty' => $this->t('No reports available.'),
+      '#attributes' => ['class' => ['content-radar-reports-table']],
     ];
 
-    // Add pager.
     $build['pager'] = [
       '#type' => 'pager',
     ];
@@ -212,15 +123,9 @@ class ReportsController extends ControllerBase {
   }
 
   /**
-   * Displays report details.
-   *
-   * @param int $rid
-   *   The report ID.
-   *
-   * @return array
-   *   A render array.
+   * Display report details.
    */
-  public function reportDetails($rid) {
+  public function reportDetail($rid) {
     $report = $this->database->select('content_radar_reports', 'r')
       ->fields('r')
       ->condition('rid', $rid)
@@ -231,90 +136,37 @@ class ReportsController extends ControllerBase {
       throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException();
     }
 
-    // Prepare summary data.
-    $user = $this->entityTypeManager()->getStorage('user')->load($report->uid);
-    $username = $user ? $user->getDisplayName() : $this->t('Anonymous');
-
-    $summary = [
-      'date' => $this->dateFormatter->format($report->created, 'long'),
-      'user' => $username,
-      'search_term' => $report->search_term,
-      'replace_term' => $report->replace_term,
-      'language' => $report->langcode ?: $this->t('All languages'),
-      'use_regex' => $report->use_regex ? $this->t('Yes') : $this->t('No'),
-      'total_replacements' => $report->total_replacements,
-      'entities_affected' => $report->nodes_affected,
-    ];
-
-    // Prepare details data.
-    $details_data = [];
+    $user = User::load($report->uid);
     $details = unserialize($report->details);
-    if (!empty($details)) {
-      foreach ($details as $entity_data) {
-        $entity_type = isset($entity_data['entity_type']) ? $entity_data['entity_type'] : 'node';
-        $entity_id = isset($entity_data['id']) ? $entity_data['id'] : (isset($entity_data['nid']) ? $entity_data['nid'] : null);
-        
-        if (!$entity_id) {
-          continue;
-        }
-        
-        $url = '';
-        $edit_url = '';
-        
-        try {
-          if ($entity_type === 'node') {
-            $url = Url::fromRoute('entity.node.canonical', ['node' => $entity_id])->toString();
-            $edit_url = Url::fromRoute('entity.node.edit_form', ['node' => $entity_id])->toString();
-          }
-          else {
-            // Try to build generic entity URLs
-            $url = Url::fromRoute('entity.' . $entity_type . '.canonical', [$entity_type => $entity_id])->toString();
-            $edit_url = Url::fromRoute('entity.' . $entity_type . '.edit_form', [$entity_type => $entity_id])->toString();
-          }
-        } catch (\Exception $e) {
-          // Some entities may not have standard URLs
-        }
-        
-        $details_data[] = [
-          'entity_type' => $entity_type,
-          'entity_id' => $entity_id,
-          'title' => $entity_data['title'],
-          'type' => $entity_data['type'],
-          'langcode' => $entity_data['langcode'],
-          'count' => $entity_data['count'],
-          'url' => $url,
-          'edit_url' => $edit_url,
-        ];
-      }
-    }
 
-    // Check if this is an undo operation.
-    $is_undo = FALSE;
-    $details_raw = unserialize($report->details);
-    if ($details_raw && isset($details_raw['undone_from'])) {
-      $is_undo = TRUE;
-    }
+    $build = [];
 
-    return [
+    // Summary section.
+    $build['summary'] = [
       '#theme' => 'content_radar_report_details',
       '#report' => $report,
-      '#summary' => $summary,
-      '#details' => $details_data,
-      '#back_url' => Url::fromRoute('content_radar.reports')->toString(),
-      '#export_url' => Url::fromRoute('content_radar.report_export', ['rid' => $rid])->toString(),
-      '#show_undo' => $this->currentUser()->hasPermission('replace content radar') && !$is_undo,
-      '#undo_url' => Url::fromRoute('content_radar.report_undo', ['rid' => $rid])->toString(),
+      '#summary' => [
+        'created' => $this->dateFormatter->format($report->created, 'long'),
+        'user' => $user ? $user->getDisplayName() : $this->t('Anonymous'),
+        'search_term' => $report->search_term,
+        'replace_term' => $report->replace_term,
+        'use_regex' => $report->use_regex ? $this->t('Yes') : $this->t('No'),
+        'language' => $report->langcode ?: $this->t('All languages'),
+        'total_replacements' => $report->total_replacements,
+        'affected_entities' => $report->affected_entities,
+      ],
+      '#details' => $details,
+      '#back_url' => Url::fromRoute('content_radar.reports'),
+      '#export_url' => Url::fromRoute('content_radar.report_export', ['rid' => $rid]),
+      '#show_undo' => $this->currentUser()->hasPermission('undo content radar changes') && !isset($details['undone']),
+      '#undo_url' => Url::fromRoute('content_radar.undo', ['rid' => $rid]),
     ];
+
+    return $build;
   }
 
   /**
-   * Exports a report to CSV.
-   *
-   * @param int $rid
-   *   The report ID.
-   *
-   * @return \Symfony\Component\HttpFoundation\StreamedResponse
-   *   The CSV file response.
+   * Export report as CSV.
    */
   public function exportReport($rid) {
     $report = $this->database->select('content_radar_reports', 'r')
@@ -327,81 +179,43 @@ class ReportsController extends ControllerBase {
       throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException();
     }
 
-    $response = new StreamedResponse();
-    $response->setCallback(function () use ($report) {
-      $handle = fopen('php://output', 'w+');
+    $details = unserialize($report->details);
 
-      // Add BOM for Excel UTF-8 compatibility.
-      fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+    // Create CSV content.
+    $output = "\xEF\xBB\xBF"; // UTF-8 BOM
+    $csv = [];
+    $csv[] = ['Report ID', $report->rid];
+    $csv[] = ['Date', $this->dateFormatter->format($report->created, 'custom', 'Y-m-d H:i:s')];
+    $csv[] = ['Search Term', $report->search_term];
+    $csv[] = ['Replace Term', $report->replace_term];
+    $csv[] = ['Total Replacements', $report->total_replacements];
+    $csv[] = ['Affected Entities', $report->affected_entities];
+    $csv[] = [];
+    $csv[] = ['Entity Type', 'Entity ID', 'Title', 'Bundle', 'Language'];
 
-      // Write report summary.
-      fputcsv($handle, [$this->t('Content Radar Replacement Report')]);
-      fputcsv($handle, []);
-      fputcsv($handle, [$this->t('Date'), $this->dateFormatter->format($report->created, 'long')]);
-      fputcsv($handle, [$this->t('Search Term'), $report->search_term]);
-      fputcsv($handle, [$this->t('Replace Term'), $report->replace_term]);
-      fputcsv($handle, [$this->t('Language'), $report->langcode ?: $this->t('All languages')]);
-      fputcsv($handle, [$this->t('Total Replacements'), $report->total_replacements]);
-      fputcsv($handle, [$this->t('Nodes Affected'), $report->nodes_affected]);
-      fputcsv($handle, []);
+    foreach ($details as $entity_info) {
+      $csv[] = [
+        $entity_info['entity_type'],
+        $entity_info['id'],
+        $entity_info['title'],
+        $entity_info['type'],
+        $entity_info['langcode'],
+      ];
+    }
 
-      // Write details header.
-      fputcsv($handle, [
-        $this->t('Entity Type'),
-        $this->t('Entity ID'),
-        $this->t('Title'),
-        $this->t('Content Type'),
-        $this->t('Language'),
-        $this->t('URL'),
-        $this->t('Fields Modified'),
-        $this->t('Replacements'),
-      ]);
+    // Generate CSV.
+    $handle = fopen('php://temp', 'r+');
+    foreach ($csv as $row) {
+      fputcsv($handle, $row);
+    }
+    rewind($handle);
+    $output .= stream_get_contents($handle);
+    fclose($handle);
 
-      // Write details.
-      $details = unserialize($report->details);
-      if (!empty($details)) {
-        foreach ($details as $entity_data) {
-          $entity_type = isset($entity_data['entity_type']) ? $entity_data['entity_type'] : 'node';
-          $entity_id = isset($entity_data['id']) ? $entity_data['id'] : (isset($entity_data['nid']) ? $entity_data['nid'] : '');
-          
-          $fields_modified = [];
-          if (isset($entity_data['fields']) && is_array($entity_data['fields'])) {
-            foreach ($entity_data['fields'] as $field_name => $count) {
-              $fields_modified[] = $field_name . ' (' . $count . ')';
-            }
-          }
-
-          $url = '';
-          try {
-            if ($entity_type === 'node' && $entity_id) {
-              $url = Url::fromRoute('entity.node.canonical', ['node' => $entity_id], ['absolute' => TRUE])->toString();
-            }
-            elseif ($entity_id) {
-              $url = Url::fromRoute('entity.' . $entity_type . '.canonical', [$entity_type => $entity_id], ['absolute' => TRUE])->toString();
-            }
-          } catch (\Exception $e) {
-            // Some entities may not have URLs
-          }
-
-          fputcsv($handle, [
-            $entity_type,
-            $entity_id,
-            $entity_data['title'],
-            $entity_data['type'],
-            $entity_data['langcode'],
-            $url,
-            implode(', ', $fields_modified),
-            $entity_data['count'],
-          ]);
-        }
-      }
-
-      fclose($handle);
-    });
-
-    $filename = 'content_radar_report_' . $rid . '_' . date('Y-m-d_H-i-s') . '.csv';
+    // Create response.
+    $response = new Response($output);
     $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
-    $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    $response->headers->set('Content-Disposition', 'attachment; filename="content_radar_report_' . $rid . '.csv"');
 
     return $response;
   }
