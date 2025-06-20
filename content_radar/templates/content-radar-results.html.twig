@@ -71,14 +71,11 @@
               {% endif %}
             </td>
             <td>
-              {% if item.entity.toUrl is defined %}
-                <a href="{{ path(item.entity.toUrl.getRouteName, item.entity.toUrl.getRouteParameters) }}" class="button button--small">{{ 'View'|t }}</a>
-                {% if item.entity.hasLinkTemplate('edit-form') %}
-                  <a href="{{ path(item.entity.toUrl('edit-form').getRouteName, item.entity.toUrl('edit-form').getRouteParameters) }}" class="button button--small">{{ 'Edit'|t }}</a>
-                {% endif %}
-              {% else %}
-                <a href="{{ path('entity.' ~ item.entity_type ~ '.canonical', {(item.entity_type): item.id}) }}" class="button button--small">{{ 'View'|t }}</a>
-                <a href="{{ path('entity.' ~ item.entity_type ~ '.edit_form', {(item.entity_type): item.id}) }}" class="button button--small">{{ 'Edit'|t }}</a>
+              {% if item.view_url %}
+                <a href="{{ item.view_url }}" class="button button--small">{{ 'View'|t }}</a>
+              {% endif %}
+              {% if item.edit_url %}
+                <a href="{{ item.edit_url }}" class="button button--small">{{ 'Edit'|t }}</a>
               {% endif %}
             </td>
           </tr>

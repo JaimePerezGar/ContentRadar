@@ -407,6 +407,24 @@ class TextSearchService {
       $status = $entity->isPublished();
     }
 
+    // Prepare URLs.
+    $view_url = NULL;
+    $edit_url = NULL;
+    try {
+      if ($entity->hasLinkTemplate('canonical')) {
+        $view_url = $entity->toUrl('canonical')->toString();
+      }
+      if ($entity->hasLinkTemplate('edit-form')) {
+        $edit_url = $entity->toUrl('edit-form')->toString();
+      }
+    }
+    catch (\Exception $e) {
+      // Fallback to standard entity routes.
+      $route_prefix = 'entity.' . $entity_type->id();
+      $view_url = \Drupal::url($route_prefix . '.canonical', [$entity_type->id() => $entity->id()]);
+      $edit_url = \Drupal::url($route_prefix . '.edit_form', [$entity_type->id() => $entity->id()]);
+    }
+
     return [
       'entity' => $entity,
       'entity_type' => $entity_type->id(),
@@ -420,6 +438,8 @@ class TextSearchService {
       'changed' => $changed,
       'langcode' => $langcode,
       'language' => $language_name,
+      'view_url' => $view_url,
+      'edit_url' => $edit_url,
     ];
   }
 
