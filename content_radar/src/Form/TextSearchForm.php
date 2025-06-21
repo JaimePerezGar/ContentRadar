@@ -161,6 +161,22 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('langcode', ''),
     ];
 
+    // Node selection section
+    $form['node_selection'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Node Selection'),
+      '#open' => FALSE,
+      '#description' => $this->t('Optionally limit search to specific nodes.'),
+    ];
+
+    $form['node_selection']['node_ids'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Specific Node IDs'),
+      '#description' => $this->t('Enter a comma-separated list of node IDs to search within (e.g., 1,5,23). If empty, all nodes of the selected content types will be searched.'),
+      '#default_value' => $form_state->getValue(['node_selection', 'node_ids'], ''),
+      '#maxlength' => 1000,
+    ];
+
     // Advanced filters container
     $form['filters_container'] = [
       '#type' => 'fieldset',
@@ -520,6 +536,23 @@ class TextSearchForm extends FormBase {
     if (!empty($replace_term) && strlen($replace_term) > 1000) {
       $form_state->setErrorByName('replace_term', $this->t('Replace term is too long.'));
     }
+    
+    // Validate node IDs if provided.
+    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    if (!empty($node_ids_raw)) {
+      // Remove spaces and validate format
+      $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
+      if (!preg_match('/^[0-9,]+$/', $node_ids_clean)) {
+        $form_state->setErrorByName('node_selection][node_ids', $this->t('Node IDs must be comma-separated numbers (e.g., 1,5,23).'));
+      }
+      else {
+        // Check if all IDs are valid integers
+        $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
+        if (empty($node_ids)) {
+          $form_state->setErrorByName('node_selection][node_ids', $this->t('Please enter valid node IDs.'));
+        }
+      }
+    }
   }
 
   /**
@@ -550,6 +583,14 @@ class TextSearchForm extends FormBase {
     $content_types = isset($all_bundles['node']) ? $all_bundles['node'] : [];
     $paragraph_types = isset($all_bundles['paragraph']) ? $all_bundles['paragraph'] : [];
 
+    // Get node IDs if provided.
+    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    $node_ids = [];
+    if (!empty($node_ids_raw)) {
+      $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
+      $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
+    }
+
     // Get current page from query parameter.
     $page = \Drupal::request()->query->get('page', 0);
 
@@ -565,7 +606,8 @@ class TextSearchForm extends FormBase {
         $page,
         50,
         array_keys($paragraph_types),
-        $case_sensitive
+        $case_sensitive,
+        $node_ids
       );
     } else {
       $results = $this->textSearchService->search(
@@ -577,7 +619,8 @@ class TextSearchForm extends FormBase {
         $page,
         50,
         array_keys($paragraph_types),
-        $case_sensitive
+        $case_sensitive,
+        $node_ids
       );
     }
 
@@ -630,6 +673,14 @@ class TextSearchForm extends FormBase {
     $content_types = isset($all_bundles['node']) ? $all_bundles['node'] : [];
     $paragraph_types = isset($all_bundles['paragraph']) ? $all_bundles['paragraph'] : [];
     $replace_mode = $form_state->getValue('replace_mode', 'selected');
+    
+    // Get node IDs if provided.
+    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    $node_ids = [];
+    if (!empty($node_ids_raw)) {
+      $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
+      $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
+    }
 
     // Get selected items.
     $selected_items = [];
@@ -651,7 +702,8 @@ class TextSearchForm extends FormBase {
         TRUE, // Dry run
         $selected_items,
         array_keys($paragraph_types),
-        $case_sensitive
+        $case_sensitive,
+        $node_ids
       );
 
       if ($dry_run_result['replaced_count'] > 0) {
@@ -789,7 +841,8 @@ class TextSearchForm extends FormBase {
             FALSE,
             !empty($entity_selected_items) ? $entity_selected_items : [],
             [],
-            $case_sensitive
+            $case_sensitive,
+            [] // node_ids parameter - empty for batch processing individual entities
           );
           
           if ($result['replaced_count'] > 0) {

@@ -99,7 +99,7 @@ class TextSearchService {
   /**
    * Search for text across entities.
    */
-  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE) {
+  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $results = [];
     $total = 0;
 
@@ -111,10 +111,20 @@ class TextSearchService {
 
       // Search in each entity type.
       foreach ($entity_types as $entity_type) {
-        if ($entity_type === 'node' && !empty($content_types)) {
-          // For nodes with specific content types.
-          foreach ($content_types as $content_type) {
-            $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode, $case_sensitive));
+        if ($entity_type === 'node') {
+          if (!empty($node_ids)) {
+            // Search only in specific nodes
+            $results = array_merge($results, $this->searchSpecificNodes($node_ids, $search_term, $use_regex, $langcode, $case_sensitive));
+          }
+          elseif (!empty($content_types)) {
+            // For nodes with specific content types.
+            foreach ($content_types as $content_type) {
+              $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode, $case_sensitive));
+            }
+          }
+          else {
+            // Search all nodes
+            $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode, $case_sensitive));
           }
         }
         elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
@@ -156,7 +166,7 @@ class TextSearchService {
   /**
    * Deep search for text across all related entities.
    */
-  public function deepSearch($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE) {
+  public function deepSearch($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $results = [];
     $total = 0;
     $processed = [];
@@ -169,10 +179,20 @@ class TextSearchService {
 
       // For deep search, we search ALL entities and their relationships
       foreach ($entity_types as $entity_type) {
-        if ($entity_type === 'node' && !empty($content_types)) {
-          // For nodes with specific content types.
-          foreach ($content_types as $content_type) {
-            $results = array_merge($results, $this->deepSearchContentType($content_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
+        if ($entity_type === 'node') {
+          if (!empty($node_ids)) {
+            // Deep search only in specific nodes
+            $results = array_merge($results, $this->deepSearchSpecificNodes($node_ids, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
+          }
+          elseif (!empty($content_types)) {
+            // For nodes with specific content types.
+            foreach ($content_types as $content_type) {
+              $results = array_merge($results, $this->deepSearchContentType($content_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
+            }
+          }
+          else {
+            // Deep search all nodes
+            $results = array_merge($results, $this->deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
           }
         }
         elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
@@ -218,6 +238,42 @@ class TextSearchService {
       'items' => $results,
       'total' => $total,
     ];
+  }
+
+  /**
+   * Deep search within specific nodes and all their related entities.
+   */
+  protected function deepSearchSpecificNodes(array $node_ids, $search_term, $use_regex, $langcode = '', array &$processed = [], $case_sensitive = FALSE) {
+    $results = [];
+    
+    if (empty($node_ids)) {
+      return $results;
+    }
+    
+    try {
+      $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($node_ids);
+      
+      foreach ($nodes as $node) {
+        if (!empty($langcode)) {
+          if ($node->hasTranslation($langcode)) {
+            $node = $node->getTranslation($langcode);
+          }
+          else {
+            continue;
+          }
+        }
+        
+        // Deep search includes ALL entities related to this node
+        $this->searchEntity($node, $search_term, $use_regex, $results, $processed, $case_sensitive);
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error deep searching specific nodes: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return $results;
   }
 
   /**
@@ -418,7 +474,7 @@ class TextSearchService {
   /**
    * Replace text across entities.
    */
-  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = [], $case_sensitive = FALSE) {
+  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $replaced_count = 0;
     $affected_entities = [];
 
@@ -436,9 +492,23 @@ class TextSearchService {
         }
 
         foreach ($entity_types as $entity_type) {
-          if ($entity_type === 'node' && !empty($content_types)) {
-            foreach ($content_types as $content_type) {
-              $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
+          if ($entity_type === 'node') {
+            if (!empty($node_ids)) {
+              // Replace only in specific nodes
+              $result = $this->replaceInSpecificNodes($node_ids, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
+              $replaced_count += $result['count'];
+              $affected_entities = array_merge($affected_entities, $result['entities']);
+            }
+            elseif (!empty($content_types)) {
+              foreach ($content_types as $content_type) {
+                $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
+                $replaced_count += $result['count'];
+                $affected_entities = array_merge($affected_entities, $result['entities']);
+              }
+            }
+            else {
+              // Replace in all nodes
+              $result = $this->replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
               $replaced_count += $result['count'];
               $affected_entities = array_merge($affected_entities, $result['entities']);
             }
@@ -467,6 +537,42 @@ class TextSearchService {
       'replaced_count' => $replaced_count,
       'affected_entities' => $affected_entities,
     ];
+  }
+
+  /**
+   * Search within specific nodes by IDs.
+   */
+  protected function searchSpecificNodes(array $node_ids, $search_term, $use_regex, $langcode = '', $case_sensitive = FALSE) {
+    $results = [];
+    
+    if (empty($node_ids)) {
+      return $results;
+    }
+    
+    try {
+      $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($node_ids);
+      
+      foreach ($nodes as $node) {
+        if (!empty($langcode)) {
+          if ($node->hasTranslation($langcode)) {
+            $node = $node->getTranslation($langcode);
+          }
+          else {
+            continue;
+          }
+        }
+        
+        $processed = [];
+        $this->searchEntity($node, $search_term, $use_regex, $results, $processed, $case_sensitive);
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error searching specific nodes: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return $results;
   }
 
   /**
@@ -1519,6 +1625,61 @@ class TextSearchService {
       }
     }
 
+    return ['count' => $count, 'entities' => $affected_entities];
+  }
+
+  /**
+   * Replace text within specific nodes.
+   */
+  protected function replaceInSpecificNodes(array $node_ids, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive = FALSE) {
+    $count = 0;
+    $affected_entities = [];
+    
+    if (empty($node_ids)) {
+      return ['count' => 0, 'entities' => []];
+    }
+    
+    try {
+      $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($node_ids);
+      
+      foreach ($nodes as $node) {
+        if (!empty($langcode)) {
+          if ($node->hasTranslation($langcode)) {
+            $translation = $node->getTranslation($langcode);
+            $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
+            if ($result['modified']) {
+              $count += $result['count'];
+              $affected_entities[] = [
+                'entity_type' => 'node',
+                'id' => $node->id(),
+                'title' => $translation->label(),
+                'type' => $node->bundle(),
+                'langcode' => $langcode,
+              ];
+            }
+          }
+        }
+        else {
+          $result = $this->replaceInEntity($node, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
+          if ($result['modified']) {
+            $count += $result['count'];
+            $affected_entities[] = [
+              'entity_type' => 'node',
+              'id' => $node->id(),
+              'title' => $node->label(),
+              'type' => $node->bundle(),
+              'langcode' => $node->language()->getId(),
+            ];
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error replacing in specific nodes: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
     return ['count' => $count, 'entities' => $affected_entities];
   }
 
