@@ -554,12 +554,19 @@ class TextSearchService {
 
     try {
       if (!empty($selected_items)) {
-        // Replace only in selected items.
+        // SOLO reemplazo selectivo
         $result = $this->replaceInSelectedItems($selected_items, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
         $replaced_count = $result['count'];
         $affected_entities = $result['entities'];
+        
+        // Log para confirmar
+        $this->loggerFactory->get('content_radar')->info('Selective replacement completed: @count replacements in @entities entities', [
+          '@count' => $replaced_count,
+          '@entities' => count($affected_entities)
+        ]);
       }
       else {
+        // SOLO si NO hay elementos seleccionados, hacer reemplazo masivo
         // Replace in all matching items.
         if (empty($entity_types)) {
           $entity_types = $this->getSearchableEntityTypes();
@@ -1590,6 +1597,14 @@ class TextSearchService {
    * Replace text in selected items.
    */
   protected function replaceInSelectedItems(array $selected_items, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive = FALSE) {
+    // Verificación inicial
+    if (empty($selected_items)) {
+      $this->loggerFactory->get('content_radar')->warning('replaceInSelectedItems called with empty selection');
+      return ['count' => 0, 'entities' => []];
+    }
+    
+    $this->loggerFactory->get('content_radar')->info('Processing @count selected items for replacement', ['@count' => count($selected_items)]);
+    
     $count = 0;
     $affected_entities = [];
     $entities_to_save = [];

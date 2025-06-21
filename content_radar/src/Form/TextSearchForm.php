@@ -692,7 +692,24 @@ class TextSearchForm extends FormBase {
     $selected_items = [];
     if ($replace_mode === 'selected') {
       $selected_items = $form_state->getValue('selected_items', []);
+      
+      // DEBUG logging
+      \Drupal::logger('content_radar')->debug('DEBUG - Replace mode: @mode', ['@mode' => $replace_mode]);
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items raw: @items', ['@items' => print_r($form_state->getValue('selected_items', []), TRUE)]);
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items filtered: @items', ['@items' => print_r($selected_items, TRUE)]);
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items count: @count', ['@count' => count($selected_items)]);
+      
       $selected_items = array_filter($selected_items);
+      
+      // Validación estricta
+      if (empty($selected_items)) {
+        $this->messenger()->addError($this->t('No items selected for replacement. Please select items from the results table or choose "Replace all".'));
+        $form_state->setRebuild();
+        return;
+      }
+      
+      // Log para confirmar
+      \Drupal::logger('content_radar')->info('Proceeding with selective replacement of @count items', ['@count' => count($selected_items)]);
     }
 
     // First, count how many replacements will be made.
@@ -835,6 +852,20 @@ class TextSearchForm extends FormBase {
             if (strpos($key, $entity_key) === 0) {
               $entity_selected_items[$key] = $value;
             }
+          }
+          
+          // Log para debugging
+          \Drupal::logger('content_radar')->debug('Batch process - Entity: @entity_key, Selected items: @items', [
+            '@entity_key' => $entity_key,
+            '@items' => print_r($entity_selected_items, TRUE),
+          ]);
+          
+          // Solo procesar si hay elementos seleccionados para esta entidad
+          if (empty($entity_selected_items) && !empty($selected_items)) {
+            \Drupal::logger('content_radar')->debug('Skipping entity @entity_key - no selected items', [
+              '@entity_key' => $entity_key,
+            ]);
+            continue;
           }
           
           $result = $text_search_service->replaceText(
