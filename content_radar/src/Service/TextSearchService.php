@@ -1044,7 +1044,12 @@ class TextSearchService {
         $matches = $this->searchInText($value, $search_term, $use_regex);
         if (!empty($matches)) {
           foreach ($matches as $match) {
-            $label = $field_label . ' (' . $current_path . ')';
+            // Create a more readable label for array paths
+            $readable_path = $this->makeReadablePath($current_path);
+            $label = $field_label;
+            if (!empty($readable_path)) {
+              $label .= ' (' . $readable_path . ')';
+            }
             $results[] = $this->createResultItem($entity, $field_name, $label, $match);
           }
         }
@@ -1086,12 +1091,30 @@ class TextSearchService {
    * Extract context around a match.
    */
   protected function extractContext($text, $position, $length, $context_length = 100) {
+    // First, check if the text appears to be serialized data and clean it
+    $cleaned_text = $this->cleanSerializedText($text);
+    
+    // If text was cleaned, find the new position of the match
+    if ($cleaned_text !== $text) {
+      // Try to find the search term in the cleaned text
+      $search_term = substr($text, $position, $length);
+      $new_position = strpos($cleaned_text, $search_term);
+      if ($new_position !== FALSE) {
+        $text = $cleaned_text;
+        $position = $new_position;
+      }
+    }
+    
     $start = max(0, $position - $context_length);
     $end = min(strlen($text), $position + $length + $context_length);
 
     $before = substr($text, $start, $position - $start);
     $match = substr($text, $position, $length);
     $after = substr($text, $position + $length, $end - $position - $length);
+
+    // Clean up the context parts
+    $before = $this->cleanContextText($before);
+    $after = $this->cleanContextText($after);
 
     // Add ellipsis if needed.
     if ($start > 0) {
@@ -1105,6 +1128,108 @@ class TextSearchService {
       'extract' => $before . '<mark>' . htmlspecialchars($match) . '</mark>' . $after,
       'position' => $position,
     ];
+  }
+  
+  /**
+   * Clean serialized text to make it more readable.
+   */
+  protected function cleanSerializedText($text) {
+    // Check if this is serialized data
+    if (preg_match('/^[aos]:\d+:/', $text)) {
+      // Try to unserialize
+      $unserialized = @unserialize($text);
+      if ($unserialized !== FALSE) {
+        return $this->convertArrayToReadableText($unserialized);
+      }
+    }
+    
+    // Clean up common serialized patterns
+    $text = preg_replace('/[aos]:\d+:({|")/', '', $text);
+    $text = preg_replace('/";s:\d+:"/', ' | ', $text);
+    $text = preg_replace('/";i:\d+;/', '', $text);
+    $text = preg_replace('/";?}/', '', $text);
+    
+    return $text;
+  }
+  
+  /**
+   * Convert array data to readable text.
+   */
+  protected function convertArrayToReadableText($data, $prefix = '') {
+    if (is_string($data)) {
+      return trim($data);
+    }
+    
+    if (is_array($data)) {
+      $parts = [];
+      foreach ($data as $key => $value) {
+        if (is_numeric($key)) {
+          $readable = $this->convertArrayToReadableText($value);
+          if (!empty($readable)) {
+            $parts[] = $readable;
+          }
+        }
+        else {
+          $readable = $this->convertArrayToReadableText($value);
+          if (!empty($readable)) {
+            // Make field names more readable
+            $key = str_replace('_', ' ', $key);
+            $key = str_replace('field ', '', $key);
+            $parts[] = ucfirst($key) . ': ' . $readable;
+          }
+        }
+      }
+      return implode(' | ', $parts);
+    }
+    
+    return '';
+  }
+  
+  /**
+   * Clean up context text for display.
+   */
+  protected function cleanContextText($text) {
+    // Remove multiple spaces
+    $text = preg_replace('/\s+/', ' ', $text);
+    
+    // Remove leading/trailing punctuation
+    $text = trim($text, ' .,;:{}[]"\'');
+    
+    return $text;
+  }
+  
+  /**
+   * Make a field path more readable for display.
+   */
+  protected function makeReadablePath($path) {
+    // Remove numeric indices
+    $path = preg_replace('/\.\d+\.?/', '.', $path);
+    
+    // Clean up common patterns
+    $path = str_replace('..', '.', $path);
+    $path = trim($path, '.');
+    
+    // Make field names more readable
+    $parts = explode('.', $path);
+    $readable_parts = [];
+    
+    foreach ($parts as $part) {
+      // Skip common technical keys
+      if (in_array($part, ['value', 'target_id', 'entity'])) {
+        continue;
+      }
+      
+      // Clean up field names
+      $part = str_replace('field_', '', $part);
+      $part = str_replace('_', ' ', $part);
+      $part = ucwords($part);
+      
+      if (!empty($part)) {
+        $readable_parts[] = $part;
+      }
+    }
+    
+    return implode(' > ', $readable_parts);
   }
 
   /**
