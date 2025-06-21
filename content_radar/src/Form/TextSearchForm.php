@@ -643,7 +643,8 @@ class TextSearchForm extends FormBase {
         $langcode,
         TRUE, // Dry run
         $selected_items,
-        array_keys($paragraph_types)
+        array_keys($paragraph_types),
+        $case_sensitive
       );
 
       if ($dry_run_result['replaced_count'] > 0) {
@@ -671,6 +672,7 @@ class TextSearchForm extends FormBase {
               $use_regex,
               $langcode,
               $selected_items,
+              $case_sensitive,
             ],
           ];
         }
@@ -737,7 +739,7 @@ class TextSearchForm extends FormBase {
   /**
    * Batch process callback.
    */
-  public static function batchProcess($chunk, $search_term, $replace_term, $use_regex, $langcode, $selected_items, &$context) {
+  public static function batchProcess($chunk, $search_term, $replace_term, $use_regex, $langcode, $selected_items, $case_sensitive, &$context) {
     $text_search_service = \Drupal::service('content_radar.search_service');
     
     // Initialize context results.
@@ -748,6 +750,7 @@ class TextSearchForm extends FormBase {
       $context['results']['replace_term'] = $replace_term;
       $context['results']['use_regex'] = $use_regex;
       $context['results']['langcode'] = $langcode;
+      $context['results']['case_sensitive'] = $case_sensitive;
     }
     
     // Process each entity in the chunk.
@@ -778,7 +781,8 @@ class TextSearchForm extends FormBase {
             $langcode,
             FALSE,
             !empty($entity_selected_items) ? $entity_selected_items : [],
-            []
+            [],
+            $case_sensitive
           );
           
           if ($result['replaced_count'] > 0) {

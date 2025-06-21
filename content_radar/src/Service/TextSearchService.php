@@ -418,14 +418,14 @@ class TextSearchService {
   /**
    * Replace text across entities.
    */
-  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = []) {
+  public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = [], $case_sensitive = FALSE) {
     $replaced_count = 0;
     $affected_entities = [];
 
     try {
       if (!empty($selected_items)) {
         // Replace only in selected items.
-        $result = $this->replaceInSelectedItems($selected_items, $search_term, $replace_term, $use_regex, $dry_run);
+        $result = $this->replaceInSelectedItems($selected_items, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
         $replaced_count = $result['count'];
         $affected_entities = $result['entities'];
       }
@@ -438,20 +438,20 @@ class TextSearchService {
         foreach ($entity_types as $entity_type) {
           if ($entity_type === 'node' && !empty($content_types)) {
             foreach ($content_types as $content_type) {
-              $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+              $result = $this->replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
               $replaced_count += $result['count'];
               $affected_entities = array_merge($affected_entities, $result['entities']);
             }
           }
           elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
             foreach ($paragraph_types as $paragraph_type) {
-              $result = $this->replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+              $result = $this->replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
               $replaced_count += $result['count'];
               $affected_entities = array_merge($affected_entities, $result['entities']);
             }
           }
           else {
-            $result = $this->replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run);
+            $result = $this->replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive);
             $replaced_count += $result['count'];
             $affected_entities = array_merge($affected_entities, $result['entities']);
           }
@@ -1400,7 +1400,7 @@ class TextSearchService {
   /**
    * Replace text in selected items.
    */
-  protected function replaceInSelectedItems(array $selected_items, $search_term, $replace_term, $use_regex, $dry_run) {
+  protected function replaceInSelectedItems(array $selected_items, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $affected_entities = [];
     $entities_to_save = [];
@@ -1448,13 +1448,13 @@ class TextSearchService {
         $label_key = $entity->getEntityType()->getKey('label');
         if ($field_name === 'title' || $field_name === $label_key) {
           $label = $entity->label();
-          $new_label = $this->performReplace($label, $search_term, $replace_term, $use_regex);
+          $new_label = $this->performReplace($label, $search_term, $replace_term, $use_regex, $case_sensitive);
           if ($label !== $new_label) {
             if (!$dry_run && $label_key) {
               $entity->set($label_key, $new_label);
             }
             $entities_to_save[$entity_key]['modified'] = TRUE;
-            $entities_to_save[$entity_key]['count'] += $this->countReplacements($label, $search_term, $use_regex);
+            $entities_to_save[$entity_key]['count'] += $this->countReplacements($label, $search_term, $use_regex, $case_sensitive);
           }
         }
         else {
@@ -1466,7 +1466,7 @@ class TextSearchService {
             foreach ($field_values as $delta => &$value) {
               if (isset($value['value'])) {
                 $original = $value['value'];
-                $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+                $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex, $case_sensitive);
 
                 if ($original !== $new_value) {
                   if (!$dry_run) {
@@ -1474,7 +1474,7 @@ class TextSearchService {
                   }
                   $field_modified = TRUE;
                   $entities_to_save[$entity_key]['modified'] = TRUE;
-                  $entities_to_save[$entity_key]['count'] += $this->countReplacements($original, $search_term, $use_regex);
+                  $entities_to_save[$entity_key]['count'] += $this->countReplacements($original, $search_term, $use_regex, $case_sensitive);
                 }
               }
             }
@@ -1516,7 +1516,7 @@ class TextSearchService {
   /**
    * Replace text within a specific content type.
    */
-  protected function replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+  protected function replaceInContentType($content_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $affected_entities = [];
 
@@ -1536,7 +1536,7 @@ class TextSearchService {
       if (!empty($langcode)) {
         if ($node->hasTranslation($langcode)) {
           $translation = $node->getTranslation($langcode);
-          $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run);
+          $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
           if ($result['modified']) {
             $count += $result['count'];
             $affected_entities[] = [
@@ -1550,7 +1550,7 @@ class TextSearchService {
         }
       }
       else {
-        $result = $this->replaceInEntity($node, $search_term, $replace_term, $use_regex, $dry_run);
+        $result = $this->replaceInEntity($node, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
         if ($result['modified']) {
           $count += $result['count'];
           $affected_entities[] = [
@@ -1570,7 +1570,7 @@ class TextSearchService {
   /**
    * Replace text within a specific paragraph type.
    */
-  protected function replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+  protected function replaceInParagraphType($paragraph_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $affected_entities = [];
 
@@ -1592,7 +1592,7 @@ class TextSearchService {
         if (!empty($langcode)) {
           if ($paragraph->hasTranslation($langcode)) {
             $translation = $paragraph->getTranslation($langcode);
-            $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run);
+            $result = $this->replaceInEntity($translation, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
             if ($result['modified']) {
               $count += $result['count'];
               $affected_entities[] = [
@@ -1606,7 +1606,7 @@ class TextSearchService {
           }
         }
         else {
-          $result = $this->replaceInEntity($paragraph, $search_term, $replace_term, $use_regex, $dry_run);
+          $result = $this->replaceInEntity($paragraph, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
           if ($result['modified']) {
             $count += $result['count'];
             $affected_entities[] = [
@@ -1633,7 +1633,7 @@ class TextSearchService {
   /**
    * Replace text within a specific entity type.
    */
-  protected function replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run) {
+  protected function replaceInEntityType($entity_type, $search_term, $replace_term, $use_regex, $langcode, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $affected_entities = [];
 
@@ -1654,7 +1654,7 @@ class TextSearchService {
       $entities = $storage->loadMultiple($entity_ids);
 
       foreach ($entities as $entity) {
-        $result = $this->replaceInEntity($entity, $search_term, $replace_term, $use_regex, $dry_run);
+        $result = $this->replaceInEntity($entity, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
         if ($result['modified']) {
           $count += $result['count'];
           $affected_entities[] = [
@@ -1680,7 +1680,7 @@ class TextSearchService {
   /**
    * Replace text in an entity.
    */
-  protected function replaceInEntity(EntityInterface $entity, $search_term, $replace_term, $use_regex, $dry_run) {
+  protected function replaceInEntity(EntityInterface $entity, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $entity_modified = FALSE;
     $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity->getEntityTypeId(), $entity->bundle());
@@ -1695,7 +1695,7 @@ class TextSearchService {
           $entity->set($label_key, $new_label);
         }
         $entity_modified = TRUE;
-        $count += $this->countReplacements($label, $search_term, $use_regex);
+        $count += $this->countReplacements($label, $search_term, $use_regex, $case_sensitive);
       }
     }
 
@@ -1723,7 +1723,7 @@ class TextSearchService {
         foreach ($field_values as $delta => &$value) {
           if (isset($value['value'])) {
             $original = $value['value'];
-            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex, $case_sensitive);
 
             if ($original !== $new_value) {
               if (!$dry_run) {
@@ -1731,7 +1731,7 @@ class TextSearchService {
               }
               $field_modified = TRUE;
               $entity_modified = TRUE;
-              $count += $this->countReplacements($original, $search_term, $use_regex);
+              $count += $this->countReplacements($original, $search_term, $use_regex, $case_sensitive);
             }
           }
         }
@@ -1753,7 +1753,7 @@ class TextSearchService {
   /**
    * Replace text in Layout Builder field.
    */
-  protected function replaceInLayoutBuilderField(EntityInterface $entity, $field_name, $search_term, $replace_term, $use_regex, $dry_run) {
+  protected function replaceInLayoutBuilderField(EntityInterface $entity, $field_name, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive = FALSE) {
     $count = 0;
     $field_modified = FALSE;
     
@@ -1776,7 +1776,7 @@ class TextSearchService {
               // Search and replace in serialized block data
               $block_data = unserialize($configuration['block_serialized']);
               if ($block_data && is_array($block_data)) {
-                $result = $this->replaceInArrayRecursively($block_data, $search_term, $replace_term, $use_regex);
+                $result = $this->replaceInArrayRecursively($block_data, $search_term, $replace_term, $use_regex, $case_sensitive);
                 if ($result['modified']) {
                   if (!$dry_run) {
                     $configuration['block_serialized'] = serialize($block_data);
@@ -1794,7 +1794,7 @@ class TextSearchService {
                 $block_storage = $this->entityTypeManager->getStorage('block_content');
                 $block = $block_storage->loadRevision($configuration['block_revision_id']);
                 if ($block) {
-                  $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run);
+                  $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
                   if ($result['modified']) {
                     $field_modified = TRUE;
                     $count += $result['count'];
@@ -1814,7 +1814,7 @@ class TextSearchService {
               $blocks = $block_storage->loadByProperties(['uuid' => $uuid]);
               if (!empty($blocks)) {
                 $block = reset($blocks);
-                $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run);
+                $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run, $case_sensitive);
                 if ($result['modified']) {
                   $field_modified = TRUE;
                   $count += $result['count'];
@@ -1827,7 +1827,7 @@ class TextSearchService {
           }
           // Handle other plugin configurations
           else {
-            $result = $this->replaceInArrayRecursively($configuration, $search_term, $replace_term, $use_regex);
+            $result = $this->replaceInArrayRecursively($configuration, $search_term, $replace_term, $use_regex, $case_sensitive);
             if ($result['modified']) {
               if (!$dry_run) {
                 $component->setConfiguration($configuration);
@@ -1856,22 +1856,22 @@ class TextSearchService {
   /**
    * Replace text in array recursively.
    */
-  protected function replaceInArrayRecursively(array &$data, $search_term, $replace_term, $use_regex) {
+  protected function replaceInArrayRecursively(array &$data, $search_term, $replace_term, $use_regex, $case_sensitive = FALSE) {
     $count = 0;
     $modified = FALSE;
     
     foreach ($data as $key => &$value) {
       if (is_string($value) && !empty($value)) {
         $original = $value;
-        $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+        $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex, $case_sensitive);
         if ($original !== $new_value) {
           $value = $new_value;
           $modified = TRUE;
-          $count += $this->countReplacements($original, $search_term, $use_regex);
+          $count += $this->countReplacements($original, $search_term, $use_regex, $case_sensitive);
         }
       }
       elseif (is_array($value)) {
-        $result = $this->replaceInArrayRecursively($value, $search_term, $replace_term, $use_regex);
+        $result = $this->replaceInArrayRecursively($value, $search_term, $replace_term, $use_regex, $case_sensitive);
         if ($result['modified']) {
           $modified = TRUE;
           $count += $result['count'];
@@ -1885,32 +1885,42 @@ class TextSearchService {
   /**
    * Perform the actual text replacement.
    */
-  protected function performReplace($text, $search_term, $replace_term, $use_regex) {
+  protected function performReplace($text, $search_term, $replace_term, $use_regex, $case_sensitive = FALSE) {
     if ($use_regex) {
       // Validate the regex pattern.
       if (!$this->isValidRegex($search_term)) {
         throw new \InvalidArgumentException('Invalid regular expression pattern.');
       }
-      return preg_replace('/' . $search_term . '/i', $replace_term, $text);
+      $flags = $case_sensitive ? '' : 'i';
+      return preg_replace('/' . $search_term . '/' . $flags, $replace_term, $text);
     }
     else {
-      return str_ireplace($search_term, $replace_term, $text);
+      if ($case_sensitive) {
+        return str_replace($search_term, $replace_term, $text);
+      } else {
+        return str_ireplace($search_term, $replace_term, $text);
+      }
     }
   }
 
   /**
    * Count the number of replacements.
    */
-  protected function countReplacements($text, $search_term, $use_regex) {
+  protected function countReplacements($text, $search_term, $use_regex, $case_sensitive = FALSE) {
     if ($use_regex) {
       if (@preg_match('/' . $search_term . '/', '') === FALSE) {
         return 0;
       }
-      preg_match_all('/' . $search_term . '/i', $text, $matches);
+      $flags = $case_sensitive ? '' : 'i';
+      preg_match_all('/' . $search_term . '/' . $flags, $text, $matches);
       return count($matches[0]);
     }
     else {
-      return substr_count(strtolower($text), strtolower($search_term));
+      if ($case_sensitive) {
+        return substr_count($text, $search_term);
+      } else {
+        return substr_count(strtolower($text), strtolower($search_term));
+      }
     }
   }
 
