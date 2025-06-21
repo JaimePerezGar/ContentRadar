@@ -100,6 +100,12 @@ class TextSearchService {
    * Search for text across entities.
    */
   public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE) {
+    // DEBUG: Log the case_sensitive value
+    \Drupal::logger('content_radar')->notice('Search called with case_sensitive: @case, search_term: @term', [
+      '@case' => $case_sensitive ? 'TRUE' : 'FALSE',
+      '@term' => $search_term,
+    ]);
+    
     $results = [];
     $total = 0;
 
@@ -193,7 +199,7 @@ class TextSearchService {
       
       // Always search ALL block content when doing deep search (for VLSuite/Layout Builder)
       if (in_array('block_content', $entity_types) || empty($entity_types)) {
-        $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed));
+        $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed, $case_sensitive));
       }
 
       // Sort by timestamp.
@@ -1083,6 +1089,13 @@ class TextSearchService {
    * Search for text within a string.
    */
   protected function searchInText($text, $search_term, $use_regex, $case_sensitive = FALSE) {
+    // DEBUG: Log what we're searching
+    \Drupal::logger('content_radar')->notice('searchInText: term=@term, case=@case, text_sample=@text', [
+      '@term' => $search_term,
+      '@case' => $case_sensitive ? 'TRUE' : 'FALSE',
+      '@text' => substr($text, 0, 50),
+    ]);
+    
     $matches = [];
 
     if ($use_regex) {
