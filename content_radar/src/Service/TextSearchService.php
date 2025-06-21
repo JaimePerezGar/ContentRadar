@@ -180,10 +180,19 @@ class TextSearchService {
             $results = array_merge($results, $this->deepSearchParagraphType($paragraph_type, $search_term, $use_regex, $langcode, $processed));
           }
         }
+        elseif ($entity_type === 'block_content') {
+          // Special comprehensive search for block content including Layout Builder blocks
+          $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed));
+        }
         else {
           // For all entity types.
           $results = array_merge($results, $this->deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode, $processed));
         }
+      }
+      
+      // Always search ALL block content when doing deep search (for VLSuite/Layout Builder)
+      if (in_array('block_content', $entity_types) || empty($entity_types)) {
+        $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed));
       }
 
       // Sort by timestamp.
@@ -337,6 +346,71 @@ class TextSearchService {
       ]);
     }
 
+    return $results;
+  }
+
+  /**
+   * Search specifically in all block content entities including Layout Builder blocks.
+   */
+  protected function searchAllBlockContent($search_term, $use_regex, $langcode = '', array &$processed = []) {
+    $results = [];
+    
+    try {
+      // Search in regular block_content entities
+      $block_storage = $this->entityTypeManager->getStorage('block_content');
+      $query = $block_storage->getQuery()->accessCheck(FALSE);
+      $block_ids = $query->execute();
+      
+      if (!empty($block_ids)) {
+        $blocks = $block_storage->loadMultiple($block_ids);
+        
+        foreach ($blocks as $block) {
+          if (!empty($langcode)) {
+            if ($block->hasTranslation($langcode)) {
+              $block = $block->getTranslation($langcode);
+              $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+            }
+          }
+          else {
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+          }
+        }
+      }
+      
+      // Also search all revisions of block_content (for Layout Builder inline blocks)
+      $revision_query = $block_storage->getQuery()
+        ->allRevisions()
+        ->accessCheck(FALSE);
+      $revision_ids = $revision_query->execute();
+      
+      foreach ($revision_ids as $revision_id => $entity_id) {
+        try {
+          $block_revision = $block_storage->loadRevision($revision_id);
+          if ($block_revision && !isset($processed['block_content:' . $revision_id])) {
+            $processed['block_content:' . $revision_id] = TRUE;
+            
+            if (!empty($langcode)) {
+              if ($block_revision->hasTranslation($langcode)) {
+                $block_revision = $block_revision->getTranslation($langcode);
+                $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed);
+              }
+            }
+            else {
+              $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed);
+            }
+          }
+        }
+        catch (\Exception $e) {
+          // Continue if revision loading fails
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error searching all block content: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
     return $results;
   }
 
@@ -579,6 +653,10 @@ class TextSearchService {
       elseif (in_array($field_type, $this->complexFieldTypes)) {
         $this->searchComplexField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
       }
+      // Handle Layout Builder fields specifically.
+      elseif ($field_type === 'layout_section') {
+        $this->searchLayoutBuilderField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed);
+      }
       // For any other field type, try to search for text content.
       else {
         $this->searchGenericField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
@@ -645,6 +723,14 @@ class TextSearchService {
         // If the item itself is a string
         if (is_string($item->value) && !empty($item->value)) {
           $properties['value'] = $item->value;
+        }
+        
+        // Try to unserialize data to search in serialized content
+        if (isset($item->value) && is_string($item->value)) {
+          $unserialized = @unserialize($item->value);
+          if ($unserialized !== FALSE && is_array($unserialized)) {
+            $this->searchArrayRecursively($unserialized, $entity, $field_name, $field_definition->getLabel(), $search_term, $use_regex, $results);
+          }
         }
         
         // Search in all found text properties
@@ -855,6 +941,117 @@ class TextSearchService {
         '@id' => $entity->id(),
         '@message' => $e->getMessage(),
       ]);
+    }
+  }
+
+  /**
+   * Search within Layout Builder fields for text in blocks and components.
+   */
+  protected function searchLayoutBuilderField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed) {
+    try {
+      $field_items = $entity->get($field_name);
+      
+      foreach ($field_items as $delta => $item) {
+        // Get the section object
+        $section = $item->section;
+        if (!$section) {
+          continue;
+        }
+        
+        // Search in all components of the section
+        $components = $section->getComponents();
+        foreach ($components as $component) {
+          $this->searchLayoutBuilderComponent($entity, $component, $field_name, $search_term, $use_regex, $results, $processed);
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Log the error but continue with other fields.
+      $this->loggerFactory->get('content_radar')->warning('Error searching Layout Builder field @field in entity @type:@id: @message', [
+        '@field' => $field_name,
+        '@type' => $entity->getEntityTypeId(),
+        '@id' => $entity->id(),
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Search within a Layout Builder component for text content.
+   */
+  protected function searchLayoutBuilderComponent(EntityInterface $parent_entity, $component, $field_name, $search_term, $use_regex, array &$results, array &$processed) {
+    try {
+      $plugin = $component->getPlugin();
+      $configuration = $plugin->getConfiguration();
+      
+      // Search in plugin configuration for text
+      $this->searchArrayRecursively($configuration, $parent_entity, $field_name, 'Layout Builder Block', $search_term, $use_regex, $results);
+      
+      // If it's an inline block, search the actual block entity
+      if (isset($configuration['block_revision_id']) && !empty($configuration['block_revision_id'])) {
+        try {
+          $block_storage = $this->entityTypeManager->getStorage('block_content');
+          $block = $block_storage->loadRevision($configuration['block_revision_id']);
+          
+          if ($block) {
+            // Search recursively in the block entity
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+          }
+        }
+        catch (\Exception $e) {
+          // Continue if block loading fails
+        }
+      }
+      
+      // If it's a reusable block, search by UUID
+      if (isset($configuration['id']) && strpos($configuration['id'], 'block_content:') === 0) {
+        try {
+          $uuid = str_replace('block_content:', '', $configuration['id']);
+          $block_storage = $this->entityTypeManager->getStorage('block_content');
+          $blocks = $block_storage->loadByProperties(['uuid' => $uuid]);
+          
+          if (!empty($blocks)) {
+            $block = reset($blocks);
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+          }
+        }
+        catch (\Exception $e) {
+          // Continue if block loading fails
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->warning('Error searching Layout Builder component: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Search recursively through an array structure for text content.
+   */
+  protected function searchArrayRecursively(array $data, EntityInterface $entity, $field_name, $field_label, $search_term, $use_regex, array &$results, $key_path = '') {
+    foreach ($data as $key => $value) {
+      $current_path = $key_path ? $key_path . '.' . $key : $key;
+      
+      if (is_string($value) && !empty($value)) {
+        // Skip certain keys that typically don't contain searchable text
+        $skip_keys = ['id', 'uuid', 'revision_id', 'bundle', 'langcode', 'status', 'created', 'changed'];
+        if (in_array($key, $skip_keys)) {
+          continue;
+        }
+        
+        $matches = $this->searchInText($value, $search_term, $use_regex);
+        if (!empty($matches)) {
+          foreach ($matches as $match) {
+            $label = $field_label . ' (' . $current_path . ')';
+            $results[] = $this->createResultItem($entity, $field_name, $label, $match);
+          }
+        }
+      }
+      elseif (is_array($value)) {
+        $this->searchArrayRecursively($value, $entity, $field_name, $field_label, $search_term, $use_regex, $results, $current_path);
+      }
     }
   }
 
@@ -1456,6 +1653,12 @@ class TextSearchService {
         'path_alias', // Path aliases
         'redirect', // Redirects
       ];
+      
+      // Always include block_content even if it was missed
+      if ($entity_type_id === 'block_content') {
+        $entity_types[] = $entity_type_id;
+        continue;
+      }
       
       if (in_array($entity_type_id, $skip_types)) {
         continue;

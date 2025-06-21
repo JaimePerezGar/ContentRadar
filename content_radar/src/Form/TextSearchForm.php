@@ -128,7 +128,7 @@ class TextSearchForm extends FormBase {
     $form['deep_search'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Deep search (search all related entities)'),
-      '#description' => $this->t('Enable to search recursively in ALL referenced entities, blocks, and components. This may take longer but finds text in VLSuite, Layout Builder, and all nested content.'),
+      '#description' => $this->t('Enable to search recursively in ALL referenced entities, blocks, and components. This may take longer but finds text in VLSuite, Layout Builder, and all nested content. <strong>Recommended for VLSuite sites.</strong>'),
       '#default_value' => $form_state->getValue('deep_search', FALSE),
     ];
 
