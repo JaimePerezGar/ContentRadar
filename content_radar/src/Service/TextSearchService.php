@@ -9,6 +9,7 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\TranslatableInterface;
+use Drupal\layout_builder\Section;
 
 /**
  * Service for searching and replacing text across content fields.
@@ -171,22 +172,22 @@ class TextSearchService {
         if ($entity_type === 'node' && !empty($content_types)) {
           // For nodes with specific content types.
           foreach ($content_types as $content_type) {
-            $results = array_merge($results, $this->deepSearchContentType($content_type, $search_term, $use_regex, $langcode, $processed));
+            $results = array_merge($results, $this->deepSearchContentType($content_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
           }
         }
         elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
           // For paragraphs with specific types.
           foreach ($paragraph_types as $paragraph_type) {
-            $results = array_merge($results, $this->deepSearchParagraphType($paragraph_type, $search_term, $use_regex, $langcode, $processed));
+            $results = array_merge($results, $this->deepSearchParagraphType($paragraph_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
           }
         }
         elseif ($entity_type === 'block_content') {
           // Special comprehensive search for block content including Layout Builder blocks
-          $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed));
+          $results = array_merge($results, $this->searchAllBlockContent($search_term, $use_regex, $langcode, $processed, $case_sensitive));
         }
         else {
           // For all entity types.
-          $results = array_merge($results, $this->deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode, $processed));
+          $results = array_merge($results, $this->deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode, $processed, $case_sensitive));
         }
       }
       
@@ -222,7 +223,7 @@ class TextSearchService {
   /**
    * Deep search within a specific content type and all its related entities.
    */
-  protected function deepSearchContentType($content_type, $search_term, $use_regex, $langcode = '', array &$processed = []) {
+  protected function deepSearchContentType($content_type, $search_term, $use_regex, $langcode = '', array &$processed = [], $case_sensitive = FALSE) {
     $results = [];
 
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
@@ -248,7 +249,7 @@ class TextSearchService {
       }
 
       // Deep search includes ALL entities related to this node
-      $this->searchEntity($node, $search_term, $use_regex, $results, $processed);
+      $this->searchEntity($node, $search_term, $use_regex, $results, $processed, $case_sensitive);
     }
 
     return $results;
@@ -257,7 +258,7 @@ class TextSearchService {
   /**
    * Deep search within a specific paragraph type and all its related entities.
    */
-  protected function deepSearchParagraphType($paragraph_type, $search_term, $use_regex, $langcode = '', array &$processed = []) {
+  protected function deepSearchParagraphType($paragraph_type, $search_term, $use_regex, $langcode = '', array &$processed = [], $case_sensitive = FALSE) {
     $results = [];
 
     try {
@@ -278,11 +279,11 @@ class TextSearchService {
         if (!empty($langcode)) {
           if ($paragraph->hasTranslation($langcode)) {
             $paragraph = $paragraph->getTranslation($langcode);
-            $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+            $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed, $case_sensitive);
           }
         }
         else {
-          $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+          $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed, $case_sensitive);
         }
       }
     }
@@ -299,7 +300,7 @@ class TextSearchService {
   /**
    * Deep search within a specific entity type and all its related entities.
    */
-  protected function deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode = '', array &$processed = []) {
+  protected function deepSearchEntityType($entity_type, $search_term, $use_regex, $langcode = '', array &$processed = [], $case_sensitive = FALSE) {
     $results = [];
 
     try {
@@ -323,19 +324,19 @@ class TextSearchService {
           if (!empty($langcode)) {
             if ($entity->hasTranslation($langcode)) {
               $entity = $entity->getTranslation($langcode);
-              $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($entity, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
           else {
             $languages = $entity->getTranslationLanguages();
             foreach ($languages as $translation_langcode => $language) {
               $translation = $entity->getTranslation($translation_langcode);
-              $this->searchEntity($translation, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($translation, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
         }
         else {
-          $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
+          $this->searchEntity($entity, $search_term, $use_regex, $results, $processed, $case_sensitive);
         }
       }
     }
@@ -352,7 +353,7 @@ class TextSearchService {
   /**
    * Search specifically in all block content entities including Layout Builder blocks.
    */
-  protected function searchAllBlockContent($search_term, $use_regex, $langcode = '', array &$processed = []) {
+  protected function searchAllBlockContent($search_term, $use_regex, $langcode = '', array &$processed = [], $case_sensitive = FALSE) {
     $results = [];
     
     try {
@@ -368,11 +369,11 @@ class TextSearchService {
           if (!empty($langcode)) {
             if ($block->hasTranslation($langcode)) {
               $block = $block->getTranslation($langcode);
-              $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($block, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
           else {
-            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed, $case_sensitive);
           }
         }
       }
@@ -392,11 +393,11 @@ class TextSearchService {
             if (!empty($langcode)) {
               if ($block_revision->hasTranslation($langcode)) {
                 $block_revision = $block_revision->getTranslation($langcode);
-                $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed);
+                $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed, $case_sensitive);
               }
             }
             else {
-              $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($block_revision, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
         }
@@ -471,7 +472,7 @@ class TextSearchService {
   /**
    * Search within a specific content type.
    */
-  protected function searchContentType($content_type, $search_term, $use_regex, $langcode = '') {
+  protected function searchContentType($content_type, $search_term, $use_regex, $langcode = '', $case_sensitive = FALSE) {
     $results = [];
 
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
@@ -497,7 +498,7 @@ class TextSearchService {
       }
 
       $processed = [];
-      $this->searchEntity($node, $search_term, $use_regex, $results, $processed);
+      $this->searchEntity($node, $search_term, $use_regex, $results, $processed, $case_sensitive);
     }
 
     return $results;
@@ -506,7 +507,7 @@ class TextSearchService {
   /**
    * Search within a specific paragraph type.
    */
-  protected function searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode = '') {
+  protected function searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode = '', $case_sensitive = FALSE) {
     $results = [];
 
     try {
@@ -528,12 +529,12 @@ class TextSearchService {
           if ($paragraph->hasTranslation($langcode)) {
             $paragraph = $paragraph->getTranslation($langcode);
             $processed = [];
-            $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+            $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed, $case_sensitive);
           }
         }
         else {
           $processed = [];
-          $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed);
+          $this->searchEntity($paragraph, $search_term, $use_regex, $results, $processed, $case_sensitive);
         }
       }
     }
@@ -550,7 +551,7 @@ class TextSearchService {
   /**
    * Search within a specific entity type.
    */
-  protected function searchEntityType($entity_type, $search_term, $use_regex, $langcode = '') {
+  protected function searchEntityType($entity_type, $search_term, $use_regex, $langcode = '', $case_sensitive = FALSE) {
     $results = [];
 
     try {
@@ -575,7 +576,7 @@ class TextSearchService {
             if ($entity->hasTranslation($langcode)) {
               $entity = $entity->getTranslation($langcode);
               $processed = [];
-              $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($entity, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
           else {
@@ -583,13 +584,13 @@ class TextSearchService {
             foreach ($languages as $translation_langcode => $language) {
               $translation = $entity->getTranslation($translation_langcode);
               $processed = [];
-              $this->searchEntity($translation, $search_term, $use_regex, $results, $processed);
+              $this->searchEntity($translation, $search_term, $use_regex, $results, $processed, $case_sensitive);
             }
           }
         }
         else {
           $processed = [];
-          $this->searchEntity($entity, $search_term, $use_regex, $results, $processed);
+          $this->searchEntity($entity, $search_term, $use_regex, $results, $processed, $case_sensitive);
         }
       }
     }
@@ -606,7 +607,7 @@ class TextSearchService {
   /**
    * Search within an entity.
    */
-  protected function searchEntity(EntityInterface $entity, $search_term, $use_regex, array &$results, array &$processed = []) {
+  protected function searchEntity(EntityInterface $entity, $search_term, $use_regex, array &$results, array &$processed = [], $case_sensitive = FALSE) {
     $entity_type_id = $entity->getEntityTypeId();
     $bundle = $entity->bundle();
     $entity_id = $entity->id();
@@ -625,7 +626,7 @@ class TextSearchService {
     $label_key = $entity->getEntityType()->getKey('label');
     if ($label_key && $entity->hasField($label_key)) {
       $label = $entity->get($label_key)->value;
-      $matches = $this->searchInText($label, $search_term, $use_regex);
+      $matches = $this->searchInText($label, $search_term, $use_regex, $case_sensitive);
       if (!empty($matches)) {
         foreach ($matches as $match) {
           $results[] = $this->createResultItem($entity, $label_key, $this->t('Title'), $match);
@@ -643,23 +644,23 @@ class TextSearchService {
       
       // Handle text fields.
       if (in_array($field_type, $this->searchableFieldTypes)) {
-        $this->searchTextField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
+        $this->searchTextField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $case_sensitive);
       }
       // Handle entity reference fields (ANY type that could reference entities).
       elseif ($this->isReferenceField($field_definition)) {
-        $this->searchReferenceField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed);
+        $this->searchReferenceField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed, $case_sensitive);
       }
       // Handle complex fields that may contain text.
       elseif (in_array($field_type, $this->complexFieldTypes)) {
-        $this->searchComplexField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
+        $this->searchComplexField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $case_sensitive);
       }
       // Handle Layout Builder fields specifically.
       elseif ($field_type === 'layout_section') {
-        $this->searchLayoutBuilderField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed);
+        $this->searchLayoutBuilderField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $processed, $case_sensitive);
       }
       // For any other field type, try to search for text content.
       else {
-        $this->searchGenericField($entity, $field_name, $field_definition, $search_term, $use_regex, $results);
+        $this->searchGenericField($entity, $field_name, $field_definition, $search_term, $use_regex, $results, $case_sensitive);
       }
     }
   }
@@ -703,7 +704,7 @@ class TextSearchService {
   /**
    * Search in any generic field for text content.
    */
-  protected function searchGenericField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results) {
+  protected function searchGenericField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, $case_sensitive = FALSE) {
     try {
       $field_items = $entity->get($field_name);
       
@@ -729,13 +730,13 @@ class TextSearchService {
         if (isset($item->value) && is_string($item->value)) {
           $unserialized = @unserialize($item->value);
           if ($unserialized !== FALSE && is_array($unserialized)) {
-            $this->searchArrayRecursively($unserialized, $entity, $field_name, $field_definition->getLabel(), $search_term, $use_regex, $results);
+            $this->searchArrayRecursively($unserialized, $entity, $field_name, $field_definition->getLabel(), $search_term, $use_regex, $results, '', $case_sensitive);
           }
         }
         
         // Search in all found text properties
         foreach ($properties as $property => $text) {
-          $matches = $this->searchInText($text, $search_term, $use_regex);
+          $matches = $this->searchInText($text, $search_term, $use_regex, $case_sensitive);
           if (!empty($matches)) {
             foreach ($matches as $match) {
               $field_label = $field_definition->getLabel();
@@ -762,7 +763,7 @@ class TextSearchService {
   /**
    * Search within a text field.
    */
-  protected function searchTextField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results) {
+  protected function searchTextField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, $case_sensitive = FALSE) {
     $field_values = $entity->get($field_name)->getValue();
     foreach ($field_values as $delta => $value) {
       // Handle different text field structures
@@ -786,7 +787,7 @@ class TextSearchService {
           continue;
         }
 
-        $matches = $this->searchInText($text, $search_term, $use_regex);
+        $matches = $this->searchInText($text, $search_term, $use_regex, $case_sensitive);
         if (!empty($matches)) {
           foreach ($matches as $match) {
             $field_label = $field_definition->getLabel();
@@ -803,7 +804,7 @@ class TextSearchService {
   /**
    * Search within an entity reference field recursively.
    */
-  protected function searchReferenceField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed) {
+  protected function searchReferenceField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed, $case_sensitive = FALSE) {
     try {
       $field_items = $entity->get($field_name);
       
@@ -846,7 +847,7 @@ class TextSearchService {
         }
 
         // Search recursively in the referenced entity.
-        $this->searchEntity($referenced_entity, $search_term, $use_regex, $results, $processed);
+        $this->searchEntity($referenced_entity, $search_term, $use_regex, $results, $processed, $case_sensitive);
       }
     }
     catch (\Exception $e) {
@@ -863,7 +864,7 @@ class TextSearchService {
   /**
    * Search within a complex field that may contain text.
    */
-  protected function searchComplexField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results) {
+  protected function searchComplexField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, $case_sensitive = FALSE) {
     try {
       $field_items = $entity->get($field_name);
       
@@ -920,7 +921,7 @@ class TextSearchService {
             continue;
           }
           
-          $matches = $this->searchInText($text, $search_term, $use_regex);
+          $matches = $this->searchInText($text, $search_term, $use_regex, $case_sensitive);
           if (!empty($matches)) {
             foreach ($matches as $match) {
               $field_label = $field_definition->getLabel();
@@ -947,7 +948,7 @@ class TextSearchService {
   /**
    * Search within Layout Builder fields for text in blocks and components.
    */
-  protected function searchLayoutBuilderField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed) {
+  protected function searchLayoutBuilderField(EntityInterface $entity, $field_name, $field_definition, $search_term, $use_regex, array &$results, array &$processed, $case_sensitive = FALSE) {
     try {
       $field_items = $entity->get($field_name);
       
@@ -1003,7 +1004,7 @@ class TextSearchService {
       }
       
       // Search in plugin configuration for text
-      $this->searchArrayRecursively($configuration, $parent_entity, $field_name, $block_label, $search_term, $use_regex, $results);
+      $this->searchArrayRecursively($configuration, $parent_entity, $field_name, $block_label, $search_term, $use_regex, $results, '', $case_sensitive);
       
       // If it's an inline block, search the actual block entity
       if (isset($configuration['block_revision_id']) && !empty($configuration['block_revision_id'])) {
@@ -1013,7 +1014,7 @@ class TextSearchService {
           
           if ($block) {
             // Search recursively in the block entity
-            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed, $case_sensitive);
           }
         }
         catch (\Exception $e) {
@@ -1030,7 +1031,7 @@ class TextSearchService {
           
           if (!empty($blocks)) {
             $block = reset($blocks);
-            $this->searchEntity($block, $search_term, $use_regex, $results, $processed);
+            $this->searchEntity($block, $search_term, $use_regex, $results, $processed, $case_sensitive);
           }
         }
         catch (\Exception $e) {
@@ -1048,7 +1049,7 @@ class TextSearchService {
   /**
    * Search recursively through an array structure for text content.
    */
-  protected function searchArrayRecursively(array $data, EntityInterface $entity, $field_name, $field_label, $search_term, $use_regex, array &$results, $key_path = '') {
+  protected function searchArrayRecursively(array $data, EntityInterface $entity, $field_name, $field_label, $search_term, $use_regex, array &$results, $key_path = '', $case_sensitive = FALSE) {
     foreach ($data as $key => $value) {
       $current_path = $key_path ? $key_path . '.' . $key : $key;
       
@@ -1059,7 +1060,7 @@ class TextSearchService {
           continue;
         }
         
-        $matches = $this->searchInText($value, $search_term, $use_regex);
+        $matches = $this->searchInText($value, $search_term, $use_regex, $case_sensitive);
         if (!empty($matches)) {
           foreach ($matches as $match) {
             // Create a more readable label for array paths
@@ -1073,7 +1074,7 @@ class TextSearchService {
         }
       }
       elseif (is_array($value)) {
-        $this->searchArrayRecursively($value, $entity, $field_name, $field_label, $search_term, $use_regex, $results, $current_path);
+        $this->searchArrayRecursively($value, $entity, $field_name, $field_label, $search_term, $use_regex, $results, $current_path, $case_sensitive);
       }
     }
   }
@@ -1119,38 +1120,60 @@ class TextSearchService {
    * Extract context around a match.
    */
   protected function extractContext($text, $position, $length, $context_length = 100) {
+    // Store the original match from the original text
+    $original_match = mb_substr($text, $position, $length);
+    
     // First, check if the text appears to be serialized data and clean it
     $cleaned_text = $this->cleanSerializedText($text);
     
-    // If text was cleaned, find the new position of the match
+    // If text was cleaned, we need to use the original match for display
+    // but show cleaned context around it
     if ($cleaned_text !== $text) {
-      // Try to find the search term in the cleaned text
-      $search_term = substr($text, $position, $length);
-      $new_position = strpos($cleaned_text, $search_term);
-      if ($new_position !== FALSE) {
-        $text = $cleaned_text;
-        $position = $new_position;
-      }
+      $text = $cleaned_text;
+      // Don't try to find new position - just use the cleaned text for context
+      // This avoids highlighting position issues
+      $match = $original_match;
+    } else {
+      $match = $original_match;
     }
     
-    $start = max(0, $position - $context_length);
-    $end = min(strlen($text), $position + $length + $context_length);
+    // For cleaned text, we'll just show context from the beginning since position may be invalid
+    if ($cleaned_text !== $text) {
+      // Show a reasonable amount of cleaned text with the match highlighted
+      $text_length = mb_strlen($text);
+      $excerpt_length = min($text_length, $context_length * 2);
+      $excerpt = mb_substr($text, 0, $excerpt_length);
+      
+      // Find the match in the excerpt to highlight it properly
+      $match_pos = mb_stripos($excerpt, $match);
+      if ($match_pos !== FALSE) {
+        $before = mb_substr($excerpt, 0, $match_pos);
+        $after = mb_substr($excerpt, $match_pos + mb_strlen($match));
+      } else {
+        // If match not found in excerpt, just show the excerpt with match at end
+        $before = $excerpt . ' ... ';
+        $after = '';
+      }
+    } else {
+      // For non-cleaned text, use the original position-based approach
+      $start = max(0, $position - $context_length);
+      $end = min(mb_strlen($text), $position + $length + $context_length);
 
-    $before = substr($text, $start, $position - $start);
-    $match = substr($text, $position, $length);
-    $after = substr($text, $position + $length, $end - $position - $length);
+      $before = mb_substr($text, $start, $position - $start);
+      $after = mb_substr($text, $position + $length, $end - $position - $length);
+      
+      // Add ellipsis if needed for non-cleaned text
+      if ($start > 0) {
+        $before = '...' . $before;
+      }
+      if ($end < mb_strlen($text)) {
+        $after = $after . '...';
+      }
+    }
 
     // Clean up the context parts
     $before = $this->cleanContextText($before);
     $after = $this->cleanContextText($after);
-
-    // Add ellipsis if needed.
-    if ($start > 0) {
-      $before = '...' . $before;
-    }
-    if ($end < strlen($text)) {
-      $after = $after . '...';
-    }
 
     return [
       'extract' => $before . '<mark>' . htmlspecialchars($match) . '</mark>' . $after,
@@ -1674,35 +1697,44 @@ class TextSearchService {
 
     // Replace in fields.
     foreach ($field_definitions as $field_name => $field_definition) {
-      if (!in_array($field_definition->getType(), $this->searchableFieldTypes)) {
-        continue;
-      }
-
       if (!$entity->hasField($field_name)) {
         continue;
       }
 
-      $field_values = $entity->get($field_name)->getValue();
-      $field_modified = FALSE;
-
-      foreach ($field_values as $delta => &$value) {
-        if (isset($value['value'])) {
-          $original = $value['value'];
-          $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
-
-          if ($original !== $new_value) {
-            if (!$dry_run) {
-              $value['value'] = $new_value;
-            }
-            $field_modified = TRUE;
-            $entity_modified = TRUE;
-            $count += $this->countReplacements($original, $search_term, $use_regex);
-          }
+      $field_type = $field_definition->getType();
+      
+      // Handle Layout Builder fields
+      if ($field_type === 'layout_section') {
+        $result = $this->replaceInLayoutBuilderField($entity, $field_name, $search_term, $replace_term, $use_regex, $dry_run);
+        if ($result['modified']) {
+          $entity_modified = TRUE;
+          $count += $result['count'];
         }
       }
+      // Handle regular text fields
+      elseif (in_array($field_type, $this->searchableFieldTypes)) {
+        $field_values = $entity->get($field_name)->getValue();
+        $field_modified = FALSE;
 
-      if ($field_modified && !$dry_run) {
-        $entity->set($field_name, $field_values);
+        foreach ($field_values as $delta => &$value) {
+          if (isset($value['value'])) {
+            $original = $value['value'];
+            $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+
+            if ($original !== $new_value) {
+              if (!$dry_run) {
+                $value['value'] = $new_value;
+              }
+              $field_modified = TRUE;
+              $entity_modified = TRUE;
+              $count += $this->countReplacements($original, $search_term, $use_regex);
+            }
+          }
+        }
+
+        if ($field_modified && !$dry_run) {
+          $entity->set($field_name, $field_values);
+        }
       }
     }
 
@@ -1712,6 +1744,138 @@ class TextSearchService {
     }
 
     return ['modified' => $entity_modified, 'count' => $count];
+  }
+
+  /**
+   * Replace text in Layout Builder field.
+   */
+  protected function replaceInLayoutBuilderField(EntityInterface $entity, $field_name, $search_term, $replace_term, $use_regex, $dry_run) {
+    $count = 0;
+    $field_modified = FALSE;
+    
+    try {
+      $sections = $entity->get($field_name)->getValue();
+      
+      foreach ($sections as $delta => &$section) {
+        if (!isset($section['section']) || !$section['section'] instanceof Section) {
+          continue;
+        }
+        
+        $components = $section['section']->getComponents();
+        foreach ($components as $component_uuid => $component) {
+          $configuration = $component->get('configuration');
+          $plugin_id = $component->getPluginId();
+          
+          // Handle inline blocks
+          if ($plugin_id === 'inline_block') {
+            if (isset($configuration['block_serialized'])) {
+              // Search and replace in serialized block data
+              $block_data = unserialize($configuration['block_serialized']);
+              if ($block_data && is_array($block_data)) {
+                $result = $this->replaceInArrayRecursively($block_data, $search_term, $replace_term, $use_regex);
+                if ($result['modified']) {
+                  if (!$dry_run) {
+                    $configuration['block_serialized'] = serialize($block_data);
+                    $component->setConfiguration($configuration);
+                  }
+                  $field_modified = TRUE;
+                  $count += $result['count'];
+                }
+              }
+            }
+            
+            // If there's a block revision ID, load and replace in the block entity
+            if (isset($configuration['block_revision_id'])) {
+              try {
+                $block_storage = $this->entityTypeManager->getStorage('block_content');
+                $block = $block_storage->loadRevision($configuration['block_revision_id']);
+                if ($block) {
+                  $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run);
+                  if ($result['modified']) {
+                    $field_modified = TRUE;
+                    $count += $result['count'];
+                  }
+                }
+              }
+              catch (\Exception $e) {
+                // Continue if block loading fails
+              }
+            }
+          }
+          // Handle reusable blocks
+          elseif (strpos($plugin_id, 'block_content:') === 0) {
+            $uuid = str_replace('block_content:', '', $plugin_id);
+            try {
+              $block_storage = $this->entityTypeManager->getStorage('block_content');
+              $blocks = $block_storage->loadByProperties(['uuid' => $uuid]);
+              if (!empty($blocks)) {
+                $block = reset($blocks);
+                $result = $this->replaceInEntity($block, $search_term, $replace_term, $use_regex, $dry_run);
+                if ($result['modified']) {
+                  $field_modified = TRUE;
+                  $count += $result['count'];
+                }
+              }
+            }
+            catch (\Exception $e) {
+              // Continue if block loading fails
+            }
+          }
+          // Handle other plugin configurations
+          else {
+            $result = $this->replaceInArrayRecursively($configuration, $search_term, $replace_term, $use_regex);
+            if ($result['modified']) {
+              if (!$dry_run) {
+                $component->setConfiguration($configuration);
+              }
+              $field_modified = TRUE;
+              $count += $result['count'];
+            }
+          }
+        }
+      }
+      
+      if ($field_modified && !$dry_run) {
+        $entity->set($field_name, $sections);
+      }
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('content_radar')->error('Error replacing in Layout Builder field @field: @message', [
+        '@field' => $field_name,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+    
+    return ['modified' => $field_modified, 'count' => $count];
+  }
+
+  /**
+   * Replace text in array recursively.
+   */
+  protected function replaceInArrayRecursively(array &$data, $search_term, $replace_term, $use_regex) {
+    $count = 0;
+    $modified = FALSE;
+    
+    foreach ($data as $key => &$value) {
+      if (is_string($value) && !empty($value)) {
+        $original = $value;
+        $new_value = $this->performReplace($original, $search_term, $replace_term, $use_regex);
+        if ($original !== $new_value) {
+          $value = $new_value;
+          $modified = TRUE;
+          $count += $this->countReplacements($original, $search_term, $use_regex);
+        }
+      }
+      elseif (is_array($value)) {
+        $result = $this->replaceInArrayRecursively($value, $search_term, $replace_term, $use_regex);
+        if ($result['modified']) {
+          $modified = TRUE;
+          $count += $result['count'];
+        }
+      }
+    }
+    
+    return ['modified' => $modified, 'count' => $count];
   }
 
   /**
