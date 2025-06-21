@@ -5,6 +5,40 @@ All notable changes to the Content Radar module will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-01-21
+
+### Added
+- Case-sensitive search and replace functionality
+- Improved form structure with case_sensitive checkbox placement
+- Enhanced test coverage for case sensitivity features
+- Composer.json file for better package management
+
+### Changed
+- Moved case_sensitive checkbox to main form area for better visibility
+- Updated all search/replace methods to support case sensitivity parameter
+- Improved code documentation and examples
+
+### Fixed
+- Consistent parameter ordering across all methods
+- Test alignment with actual implementation
+
+## [1.2.0] - 2024-01-21
+
+### Fixed
+- Case-sensitive search functionality now works correctly
+- Checkbox values are properly captured from form submission
+- Improved form layout with case-sensitive option prominently placed
+
+### Changed
+- Moved case-sensitive checkbox outside of details container for better form processing
+- Updated all tests to match new form structure
+- Enhanced test coverage for case-sensitive operations
+
+### Technical
+- Fixed form value retrieval for nested checkbox elements
+- Updated all method signatures to include case_sensitive parameter
+- Comprehensive test suite updates
+
 ## [1.0.0] - 2024-01-21
 
 ### Added

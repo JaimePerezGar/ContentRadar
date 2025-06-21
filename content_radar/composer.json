@@ -1,0 +1,23 @@
+{
+  "name": "drupal/content_radar",
+  "description": "Advanced content search and replace tool for finding and managing text across all entities",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "homepage": "https://www.drupal.org/project/content_radar",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/content_radar",
+    "source": "https://git.drupalcode.org/project/content_radar"
+  },
+  "require": {
+    "drupal/core": "^10 || ^11"
+  },
+  "keywords": [
+    "Drupal",
+    "Search",
+    "Replace",
+    "Content",
+    "Text",
+    "Find",
+    "Audit"
+  ]
+}

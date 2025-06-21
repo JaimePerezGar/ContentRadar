@@ -126,7 +126,7 @@ class ContentRadarSearchTest extends BrowserTestBase {
     // Search case-insensitive (default).
     $edit = [
       'search_term' => 'test',
-      'search_options[case_sensitive]' => FALSE,
+      'case_sensitive' => FALSE,
     ];
     $this->submitForm($edit, 'Search');
     $this->assertSession()->pageTextContains('Found 1 results');
@@ -134,7 +134,7 @@ class ContentRadarSearchTest extends BrowserTestBase {
     // Search case-sensitive.
     $edit = [
       'search_term' => 'test',
-      'search_options[case_sensitive]' => TRUE,
+      'case_sensitive' => TRUE,
     ];
     $this->submitForm($edit, 'Search');
     $this->assertSession()->pageTextContains('Found 1 results');

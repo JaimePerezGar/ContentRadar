@@ -3,6 +3,7 @@ type: module
 description: 'Advanced content search and replace tool for finding and managing text across all entities.'
 package: Content Management
 core_version_requirement: ^10 || ^11
+version: '1.2.0'
 dependencies:
   - drupal:field
   - drupal:node
