@@ -1086,6 +1086,10 @@ class TextSearchService {
     $matches = [];
 
     if ($use_regex) {
+      // Validate regex pattern for security.
+      if (!$this->isValidRegex($search_term)) {
+        return $matches;
+      }
       $flags = $case_sensitive ? '' : 'i';
       if (@preg_match_all('/' . $search_term . '/' . $flags, $text, $preg_matches, PREG_OFFSET_CAPTURE) !== FALSE) {
         foreach ($preg_matches[0] as $match) {
@@ -1884,7 +1888,7 @@ class TextSearchService {
   protected function performReplace($text, $search_term, $replace_term, $use_regex) {
     if ($use_regex) {
       // Validate the regex pattern.
-      if (@preg_match('/' . $search_term . '/', '') === FALSE) {
+      if (!$this->isValidRegex($search_term)) {
         throw new \InvalidArgumentException('Invalid regular expression pattern.');
       }
       return preg_replace('/' . $search_term . '/i', $replace_term, $text);
@@ -1908,6 +1912,37 @@ class TextSearchService {
     else {
       return substr_count(strtolower($text), strtolower($search_term));
     }
+  }
+
+  /**
+   * Validate a regular expression pattern.
+   *
+   * @param string $pattern
+   *   The regex pattern to validate.
+   *
+   * @return bool
+   *   TRUE if valid, FALSE otherwise.
+   */
+  protected function isValidRegex($pattern) {
+    // Check for potentially dangerous patterns.
+    $dangerous_patterns = [
+      // Recursive patterns that could cause DoS.
+      '(\(\?R\))',
+      // Backreferences that could be exploited.
+      '(\\g\{)',
+      // PCRE verbs that could be dangerous.
+      '(\(\*[A-Z]+)',
+    ];
+    
+    foreach ($dangerous_patterns as $dangerous) {
+      if (preg_match($dangerous, $pattern)) {
+        return FALSE;
+      }
+    }
+    
+    // Test the pattern safely.
+    $test = @preg_match('/' . $pattern . '/', '');
+    return $test !== FALSE;
   }
 
   /**

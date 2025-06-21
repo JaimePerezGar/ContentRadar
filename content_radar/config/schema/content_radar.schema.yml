@@ -1,0 +1,93 @@
+# Schema for Content Radar module configuration.
+
+content_radar.settings:
+  type: config_object
+  label: 'Content Radar settings'
+  mapping:
+    default_results_per_page:
+      type: integer
+      label: 'Default results per page'
+    enable_deep_search_default:
+      type: boolean
+      label: 'Enable deep search by default'
+    max_context_length:
+      type: integer
+      label: 'Maximum context length for search results'
+    excluded_entity_types:
+      type: sequence
+      label: 'Entity types excluded from search'
+      sequence:
+        type: string
+        label: 'Entity type'
+    excluded_field_types:
+      type: sequence
+      label: 'Field types excluded from search'
+      sequence:
+        type: string
+        label: 'Field type'
+
+# Schema for search log entries
+content_radar.search_log:
+  type: mapping
+  label: 'Search log entry'
+  mapping:
+    lid:
+      type: integer
+      label: 'Log ID'
+    uid:
+      type: integer
+      label: 'User ID'
+    search_term:
+      type: string
+      label: 'Search term'
+    use_regex:
+      type: boolean
+      label: 'Used regex'
+    entity_types:
+      type: text
+      label: 'Entity types searched'
+    content_types:
+      type: text
+      label: 'Content types searched'
+    results_count:
+      type: integer
+      label: 'Number of results'
+    timestamp:
+      type: integer
+      label: 'Timestamp'
+
+# Schema for replacement reports
+content_radar.report:
+  type: mapping
+  label: 'Replacement report'
+  mapping:
+    rid:
+      type: integer
+      label: 'Report ID'
+    uid:
+      type: integer
+      label: 'User ID'
+    created:
+      type: integer
+      label: 'Created timestamp'
+    search_term:
+      type: string
+      label: 'Search term'
+    replace_term:
+      type: string
+      label: 'Replace term'
+    use_regex:
+      type: boolean
+      label: 'Used regex'
+    langcode:
+      type: string
+      label: 'Language code'
+    total_replacements:
+      type: integer
+      label: 'Total replacements'
+    affected_entities:
+      type: integer
+      label: 'Number of affected entities'
+    details:
+      type: text
+      label: 'Serialized details'

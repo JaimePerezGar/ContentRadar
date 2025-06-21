@@ -31,11 +31,58 @@ Content Radar is a powerful Drupal module for searching and replacing text acros
 1. Navigate to **Content > Content Radar**
 2. Enter your search term
 3. Optionally:
-   - Enable regular expressions
+   - Enable **case sensitive** for exact case matching
+   - Enable **regular expressions** for pattern matching
+   - Enable **deep search** to find text in Layout Builder blocks and nested entities
    - Select specific languages
    - Filter by entity types
-   - Filter by content types (for nodes)
+   - Filter by content types or bundles
 4. Click **Search**
+
+### Usage Examples
+
+#### Basic Text Search
+```
+Search term: "old content"
+Finds: All occurrences of "old content" (case-insensitive)
+```
+
+#### Case-Sensitive Search
+```
+Search term: "Test"
+Case sensitive: ✓
+Finds: Only "Test", not "test" or "TEST"
+```
+
+#### Regular Expression Examples
+```
+# Find phone numbers
+Pattern: \d{3}-\d{3}-\d{4}
+Finds: 123-456-7890, 555-123-4567
+
+# Find email addresses  
+Pattern: [a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+Finds: user@example.com, admin@site.org
+
+# Find prices
+Pattern: \$\d+(\.\d{2})?
+Finds: $10, $99.99, $1250.00
+
+# Find specific HTML tags
+Pattern: <h[1-6]>.*?</h[1-6]>
+Finds: <h1>Title</h1>, <h3>Subtitle</h3>
+```
+
+#### Deep Search (Layout Builder/VLSuite)
+```
+Deep search: ✓
+Searches in:
+- Layout Builder inline blocks
+- Custom block content
+- Paragraphs at any nesting level
+- Entity reference fields
+- Serialized configuration data
+```
 
 ### Replacing Text
 
@@ -45,6 +92,23 @@ Content Radar is a powerful Drupal module for searching and replacing text acros
    - **Replace all**: Replaces all found occurrences
    - **Replace selected**: Only replaces checked items
 4. Confirm and click **Replace**
+
+#### Replacement Examples
+```
+# Simple replacement
+Search: "Company XYZ"
+Replace: "Company ABC"
+
+# Regex replacement (change date format)
+Search: (\d{2})/(\d{2})/(\d{4})
+Replace: $3-$2-$1
+Changes: 12/25/2023 → 2023-25-12
+
+# Remove HTML tags
+Search: <[^>]+>
+Replace: (empty)
+Removes all HTML tags
+```
 
 ### Viewing Reports
 

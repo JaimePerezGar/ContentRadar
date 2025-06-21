@@ -488,6 +488,42 @@ class TextSearchForm extends FormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state) {
+    parent::validateForm($form, $form_state);
+    
+    $search_term = $form_state->getValue('search_term');
+    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
+    
+    // Validate search term.
+    if (empty(trim($search_term))) {
+      $form_state->setErrorByName('search_term', $this->t('Search term cannot be empty.'));
+    }
+    
+    // Validate regex if enabled.
+    if ($use_regex) {
+      if (@preg_match('/' . $search_term . '/', '') === FALSE) {
+        $form_state->setErrorByName('search_term', $this->t('Invalid regular expression pattern.'));
+      }
+      
+      // Check for dangerous patterns.
+      $dangerous_patterns = ['(?R)', '\g{', '(*'];
+      foreach ($dangerous_patterns as $pattern) {
+        if (strpos($search_term, $pattern) !== FALSE) {
+          $form_state->setErrorByName('search_term', $this->t('Regular expression contains potentially dangerous pattern: @pattern', ['@pattern' => $pattern]));
+        }
+      }
+    }
+    
+    // Validate replace term if provided.
+    $replace_term = $form_state->getValue('replace_term');
+    if (!empty($replace_term) && strlen($replace_term) > 1000) {
+      $form_state->setErrorByName('replace_term', $this->t('Replace term is too long.'));
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $case_sensitive = $form_state->getValue(['search_options', 'case_sensitive']);

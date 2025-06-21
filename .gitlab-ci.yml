@@ -1,0 +1,63 @@
+# GitLab CI configuration for Content Radar module
+# This file is for modules hosted on Drupal's GitLab
+
+variables:
+  # Drupal version to test against
+  DRUPAL_VERSION: "10.2.x"
+  PHP_VERSION: "8.1"
+
+stages:
+  - validate
+  - test
+
+# PHP CodeSniffer
+phpcs:
+  stage: validate
+  image: php:${PHP_VERSION}
+  before_script:
+    - apt-get update && apt-get install -y git unzip
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer global require drupal/coder:^8.3
+    - export PATH="$PATH:$HOME/.composer/vendor/bin"
+    - phpcs --config-set installed_paths ~/.composer/vendor/drupal/coder/coder_sniffer
+  script:
+    - phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,test,profile,theme content_radar/
+  allow_failure: false
+
+# PHPUnit tests
+phpunit:
+  stage: test
+  image: drupal:${DRUPAL_VERSION}-php${PHP_VERSION}-apache
+  services:
+    - mysql:5.7
+  variables:
+    MYSQL_ROOT_PASSWORD: root
+    MYSQL_DATABASE: drupal
+    MYSQL_USER: drupal
+    MYSQL_PASSWORD: drupal
+    SIMPLETEST_DB: "mysql://drupal:drupal@mysql/drupal"
+    SIMPLETEST_BASE_URL: "http://localhost"
+  before_script:
+    - apt-get update && apt-get install -y git unzip
+    - cd /var/www/html
+    - composer install
+    - mkdir -p modules/custom
+    - cp -r $CI_PROJECT_DIR/content_radar modules/custom/
+    - drush site-install standard --db-url=$SIMPLETEST_DB --yes
+    - drush en content_radar -y
+  script:
+    - cd modules/custom/content_radar
+    - ../../../vendor/bin/phpunit -c phpunit.xml.dist
+  coverage: '/^\s*Lines:\s*\d+.\d+\%/'
+
+# Security audit
+security:
+  stage: validate
+  image: php:${PHP_VERSION}
+  before_script:
+    - apt-get update && apt-get install -y git unzip
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  script:
+    - cd content_radar
+    - composer audit
+  allow_failure: true
