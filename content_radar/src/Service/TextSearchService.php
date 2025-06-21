@@ -1083,7 +1083,23 @@ class TextSearchService {
    * Search for text within a string.
    */
   protected function searchInText($text, $search_term, $use_regex, $case_sensitive = FALSE) {
+    // DEBUG: Final check
+    \Drupal::logger('content_radar')->debug('searchInText FINAL: term=@term, case_sensitive=@case, use_regex=@regex', [
+      '@term' => $search_term,
+      '@case' => $case_sensitive ? 'TRUE' : 'FALSE',
+      '@regex' => $use_regex ? 'TRUE' : 'FALSE',
+    ]);
+    
     $matches = [];
+    
+    // Debug logging
+    static $logged = FALSE;
+    if (!$logged) {
+      $this->loggerFactory->get('content_radar')->debug('searchInText called with case_sensitive=@case', [
+        '@case' => $case_sensitive ? 'TRUE' : 'FALSE',
+      ]);
+      $logged = TRUE;
+    }
 
     if ($use_regex) {
       // Validate regex pattern for security.

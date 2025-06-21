@@ -98,8 +98,8 @@ class TextSearchServiceKernelTest extends EntityKernelTestBase {
     ]);
     $node2->save();
 
-    // Search for "test".
-    $results = $this->textSearchService->search('test', FALSE, ['node'], ['article']);
+    // Search for "test" (case-insensitive by default).
+    $results = $this->textSearchService->search('test', FALSE, ['node'], ['article'], '', 0, 50, [], FALSE);
     
     $this->assertCount(1, $results['items']);
     $this->assertEquals(1, $results['total']);
@@ -136,7 +136,7 @@ class TextSearchServiceKernelTest extends EntityKernelTestBase {
     $node->save();
     $nid = $node->id();
 
-    // Replace "old" with "new".
+    // Replace "old" with "new" (case-insensitive).
     $result = $this->textSearchService->replaceText(
       'old',
       'new',
@@ -144,7 +144,10 @@ class TextSearchServiceKernelTest extends EntityKernelTestBase {
       ['node'],
       ['article'],
       '',
-      FALSE
+      FALSE,
+      [],
+      [],
+      FALSE // case_sensitive = FALSE
     );
 
     $this->assertEquals(2, $result['replaced_count']);
@@ -208,11 +211,50 @@ class TextSearchServiceKernelTest extends EntityKernelTestBase {
     ]);
     $node->save();
 
-    // Perform deep search.
-    $results = $this->textSearchService->deepSearch('deep', FALSE, ['node'], ['article']);
+    // Perform deep search (case-insensitive).
+    $results = $this->textSearchService->deepSearch('deep', FALSE, ['node'], ['article'], '', 0, 50, [], FALSE);
     
     $this->assertCount(1, $results['items']);
     $this->assertEquals('Deep Search Test', $results['items'][0]['title']);
+  }
+
+  /**
+   * Tests case-sensitive replace functionality.
+   */
+  public function testCaseSensitiveReplace() {
+    // Create a test node with mixed case content.
+    $node = Node::create([
+      'type' => 'article',
+      'title' => 'Test Article',
+      'body' => [
+        'value' => 'This has Test, test, and TEST keywords.',
+      ],
+    ]);
+    $node->save();
+    $nid = $node->id();
+
+    // Replace with case-sensitive option.
+    $result = $this->textSearchService->replaceText(
+      'test',
+      'demo',
+      FALSE,
+      ['node'],
+      ['article'],
+      '',
+      FALSE,
+      [],
+      [],
+      TRUE // case_sensitive = TRUE
+    );
+
+    $this->assertEquals(1, $result['replaced_count']);
+    
+    // Reload node and check - only lowercase 'test' should be replaced.
+    $node = Node::load($nid);
+    $this->assertStringContainsString('Test', $node->body->value);
+    $this->assertStringContainsString('demo', $node->body->value);
+    $this->assertStringContainsString('TEST', $node->body->value);
+    $this->assertStringNotContainsString('test,', $node->body->value);
   }
 
   /**
@@ -230,12 +272,12 @@ class TextSearchServiceKernelTest extends EntityKernelTestBase {
     $node->save();
 
     // Search for phone pattern.
-    $results = $this->textSearchService->search('\d{3}-\d{3}-\d{4}', TRUE, ['node'], ['article']);
+    $results = $this->textSearchService->search('\d{3}-\d{3}-\d{4}', TRUE, ['node'], ['article'], '', 0, 50, [], FALSE);
     $this->assertCount(1, $results['items']);
     $this->assertStringContainsString('123-456-7890', $results['items'][0]['extract']);
 
-    // Search for email pattern.
-    $results = $this->textSearchService->search('[a-z]+@[a-z]+\.[a-z]+', TRUE, ['node'], ['article']);
+    // Search for email pattern (case-insensitive).
+    $results = $this->textSearchService->search('[a-z]+@[a-z]+\.[a-z]+', TRUE, ['node'], ['article'], '', 0, 50, [], FALSE);
     $this->assertCount(1, $results['items']);
     $this->assertStringContainsString('test@example.com', $results['items'][0]['extract']);
   }
