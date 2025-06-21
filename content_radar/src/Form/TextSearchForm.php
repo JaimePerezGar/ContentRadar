@@ -124,11 +124,12 @@ class TextSearchForm extends FormBase {
       '#open' => TRUE,
     ];
 
-    $form['search_options']['case_sensitive'] = [
+    // Move case_sensitive outside of details to test
+    $form['case_sensitive'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Case sensitive'),
       '#description' => $this->t('Enable to make the search case-sensitive (differentiate between uppercase and lowercase).'),
-      '#default_value' => $form_state->getValue(['search_options', 'case_sensitive'], FALSE),
+      '#weight' => 5,
     ];
 
     $form['search_options']['use_regex'] = [
@@ -528,16 +529,10 @@ class TextSearchForm extends FormBase {
     $search_term = $form_state->getValue('search_term');
     
     // Get search options values
-    $case_sensitive = (bool) $form_state->getValue(['search_options', 'case_sensitive']);
+    $case_sensitive = (bool) $form_state->getValue('case_sensitive');
     $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
     $deep_search = (bool) $form_state->getValue(['search_options', 'deep_search']);
     
-    // Debug: Log the checkbox values
-    \Drupal::logger('content_radar')->debug('Search options: case_sensitive=@case, use_regex=@regex, deep_search=@deep', [
-      '@case' => $case_sensitive ? 'TRUE' : 'FALSE',
-      '@regex' => $use_regex ? 'TRUE' : 'FALSE', 
-      '@deep' => $deep_search ? 'TRUE' : 'FALSE',
-    ]);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
     
@@ -615,8 +610,8 @@ class TextSearchForm extends FormBase {
     $replace_term = $form_state->getValue('replace_term');
     
     // Get search options values
+    $case_sensitive = (bool) $form_state->getValue('case_sensitive');
     $search_options = $form_state->getValue('search_options', []);
-    $case_sensitive = !empty($search_options['case_sensitive']);
     $use_regex = !empty($search_options['use_regex']);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
