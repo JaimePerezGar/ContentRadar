@@ -98,6 +98,30 @@ class TextSearchService {
 
   /**
    * Search for text across entities.
+   *
+   * @param string $search_term
+   *   The text to search for.
+   * @param bool $use_regex
+   *   Whether to use regex for searching.
+   * @param array $entity_types
+   *   The entity types to search in.
+   * @param array $content_types
+   *   The content types to search in.
+   * @param string $langcode
+   *   The language code to search in.
+   * @param int $page
+   *   The page number for pagination.
+   * @param int $limit
+   *   The number of results per page.
+   * @param array $paragraph_types
+   *   The paragraph types to search in.
+   * @param bool $case_sensitive
+   *   Whether the search should be case sensitive.
+   * @param array $node_ids
+   *   An array of specific node IDs to search within.
+   *
+   * @return array
+   *   The search results.
    */
   public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $results = [];
@@ -165,6 +189,30 @@ class TextSearchService {
 
   /**
    * Deep search for text across all related entities.
+   *
+   * @param string $search_term
+   *   The text to search for.
+   * @param bool $use_regex
+   *   Whether to use regex for searching.
+   * @param array $entity_types
+   *   The entity types to search in.
+   * @param array $content_types
+   *   The content types to search in.
+   * @param string $langcode
+   *   The language code to search in.
+   * @param int $page
+   *   The page number for pagination.
+   * @param int $limit
+   *   The number of results per page.
+   * @param array $paragraph_types
+   *   The paragraph types to search in.
+   * @param bool $case_sensitive
+   *   Whether the search should be case sensitive.
+   * @param array $node_ids
+   *   An array of specific node IDs to search within.
+   *
+   * @return array
+   *   The search results including all related entities.
    */
   public function deepSearch($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $results = [];
@@ -473,6 +521,32 @@ class TextSearchService {
 
   /**
    * Replace text across entities.
+   *
+   * @param string $search_term
+   *   The text to search for.
+   * @param string $replace_term
+   *   The text to replace with.
+   * @param bool $use_regex
+   *   Whether to use regex for searching.
+   * @param array $entity_types
+   *   The entity types to search in.
+   * @param array $content_types
+   *   The content types to search in.
+   * @param string $langcode
+   *   The language code to search in.
+   * @param bool $dry_run
+   *   Whether to perform a dry run without saving.
+   * @param array $selected_items
+   *   Selected items to replace (for selective replacement).
+   * @param array $paragraph_types
+   *   The paragraph types to search in.
+   * @param bool $case_sensitive
+   *   Whether the search should be case sensitive.
+   * @param array $node_ids
+   *   An array of specific node IDs to search within.
+   *
+   * @return array
+   *   Array containing replaced_count and affected_entities.
    */
   public function replaceText($search_term, $replace_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $dry_run = FALSE, array $selected_items = [], array $paragraph_types = [], $case_sensitive = FALSE, array $node_ids = []) {
     $replaced_count = 0;

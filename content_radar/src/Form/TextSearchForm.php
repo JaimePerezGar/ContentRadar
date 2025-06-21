@@ -165,16 +165,14 @@ class TextSearchForm extends FormBase {
     $form['node_selection'] = [
       '#type' => 'details',
       '#title' => $this->t('Node Selection'),
-      '#open' => FALSE,
-      '#description' => $this->t('Optionally limit search to specific nodes.'),
+      '#open' => TRUE,
     ];
 
-    $form['node_selection']['node_ids'] = [
+    $form['node_selection']['nodes'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Specific Node IDs'),
-      '#description' => $this->t('Enter a comma-separated list of node IDs to search within (e.g., 1,5,23). If empty, all nodes of the selected content types will be searched.'),
-      '#default_value' => $form_state->getValue(['node_selection', 'node_ids'], ''),
-      '#maxlength' => 1000,
+      '#description' => $this->t('Enter a comma-separated list of node IDs to search within. If empty, all nodes of the selected content types will be searched.'),
+      '#default_value' => $form_state->getValue(['node_selection', 'nodes'], ''),
     ];
 
     // Advanced filters container
@@ -538,18 +536,28 @@ class TextSearchForm extends FormBase {
     }
     
     // Validate node IDs if provided.
-    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    $node_ids_raw = $form_state->getValue(['node_selection', 'nodes'], '');
     if (!empty($node_ids_raw)) {
       // Remove spaces and validate format
       $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
       if (!preg_match('/^[0-9,]+$/', $node_ids_clean)) {
-        $form_state->setErrorByName('node_selection][node_ids', $this->t('Node IDs must be comma-separated numbers (e.g., 1,5,23).'));
+        $form_state->setErrorByName('node_selection][nodes', $this->t('Node IDs must be comma-separated numbers (e.g., 1,5,23).'));
       }
       else {
         // Check if all IDs are valid integers
         $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
         if (empty($node_ids)) {
-          $form_state->setErrorByName('node_selection][node_ids', $this->t('Please enter valid node IDs.'));
+          $form_state->setErrorByName('node_selection][nodes', $this->t('Please enter valid node IDs.'));
+        }
+        else {
+          // Additional validation: check if nodes exist
+          $existing_nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($node_ids);
+          $missing_nodes = array_diff($node_ids, array_keys($existing_nodes));
+          if (!empty($missing_nodes)) {
+            $form_state->setErrorByName('node_selection][nodes', $this->t('The following node IDs do not exist: @ids', [
+              '@ids' => implode(', ', $missing_nodes),
+            ]));
+          }
         }
       }
     }
@@ -584,11 +592,10 @@ class TextSearchForm extends FormBase {
     $paragraph_types = isset($all_bundles['paragraph']) ? $all_bundles['paragraph'] : [];
 
     // Get node IDs if provided.
-    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    $node_ids_raw = $form_state->getValue(['node_selection', 'nodes'], '');
     $node_ids = [];
     if (!empty($node_ids_raw)) {
-      $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
-      $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
+      $node_ids = array_map('intval', explode(',', $node_ids_raw));
     }
 
     // Get current page from query parameter.
@@ -675,11 +682,10 @@ class TextSearchForm extends FormBase {
     $replace_mode = $form_state->getValue('replace_mode', 'selected');
     
     // Get node IDs if provided.
-    $node_ids_raw = $form_state->getValue(['node_selection', 'node_ids'], '');
+    $node_ids_raw = $form_state->getValue(['node_selection', 'nodes'], '');
     $node_ids = [];
     if (!empty($node_ids_raw)) {
-      $node_ids_clean = preg_replace('/\s+/', '', $node_ids_raw);
-      $node_ids = array_filter(array_map('intval', explode(',', $node_ids_clean)));
+      $node_ids = array_map('intval', explode(',', $node_ids_raw));
     }
 
     // Get selected items.
