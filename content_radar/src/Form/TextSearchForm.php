@@ -117,20 +117,20 @@ class TextSearchForm extends FormBase {
       '#maxlength' => 255,
       '#default_value' => $form_state->getValue('search_term', ''),
     ];
-
-    $form['search_options'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Search options'),
-      '#open' => TRUE,
-    ];
-
-    // Move case_sensitive outside of details to test
+    
+    // Place case_sensitive right after search term
     $form['case_sensitive'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Case sensitive'),
       '#description' => $this->t('Enable to make the search case-sensitive (differentiate between uppercase and lowercase).'),
-      '#weight' => 5,
     ];
+
+    $form['search_options'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Advanced search options'),
+      '#open' => FALSE,
+    ];
+
 
     $form['search_options']['use_regex'] = [
       '#type' => 'checkbox',
