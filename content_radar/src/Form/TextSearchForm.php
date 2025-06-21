@@ -526,9 +526,18 @@ class TextSearchForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
-    $case_sensitive = (bool) $form_state->getValue(['search_options', 'case_sensitive']);
-    $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
-    $deep_search = (bool) $form_state->getValue(['search_options', 'deep_search']);
+    
+    // Get search options - try different methods
+    $search_options = $form_state->getValue('search_options');
+    $case_sensitive = !empty($search_options['case_sensitive']);
+    $use_regex = !empty($search_options['use_regex']);
+    $deep_search = !empty($search_options['deep_search']);
+    
+    // DEBUG
+    \Drupal::logger('content_radar')->notice('Search options: @opts, case_sensitive raw: @raw', [
+      '@opts' => print_r($search_options, TRUE),
+      '@raw' => $search_options['case_sensitive'] ?? 'NULL',
+    ]);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
     
@@ -604,8 +613,11 @@ class TextSearchForm extends FormBase {
   public function replaceSubmit(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
-    $case_sensitive = (bool) $form_state->getValue(['search_options', 'case_sensitive']);
-    $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
+    
+    // Get search options
+    $search_options = $form_state->getValue('search_options');
+    $case_sensitive = !empty($search_options['case_sensitive']);
+    $use_regex = !empty($search_options['use_regex']);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
     
