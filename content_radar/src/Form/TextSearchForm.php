@@ -492,7 +492,7 @@ class TextSearchForm extends FormBase {
     parent::validateForm($form, $form_state);
     
     $search_term = $form_state->getValue('search_term');
-    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
+    $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
     
     // Validate search term.
     if (empty(trim($search_term))) {
@@ -526,9 +526,9 @@ class TextSearchForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
-    $case_sensitive = $form_state->getValue(['search_options', 'case_sensitive']);
-    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
-    $deep_search = $form_state->getValue(['search_options', 'deep_search']);
+    $case_sensitive = (bool) $form_state->getValue(['search_options', 'case_sensitive']);
+    $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
+    $deep_search = (bool) $form_state->getValue(['search_options', 'deep_search']);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
     
@@ -604,8 +604,8 @@ class TextSearchForm extends FormBase {
   public function replaceSubmit(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
-    $case_sensitive = $form_state->getValue(['search_options', 'case_sensitive']);
-    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
+    $case_sensitive = (bool) $form_state->getValue(['search_options', 'case_sensitive']);
+    $use_regex = (bool) $form_state->getValue(['search_options', 'use_regex']);
     $langcode = $form_state->getValue('langcode');
     $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
     
