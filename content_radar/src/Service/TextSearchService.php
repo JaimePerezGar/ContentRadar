@@ -962,7 +962,7 @@ class TextSearchService {
         // Search in all components of the section
         $components = $section->getComponents();
         foreach ($components as $component) {
-          $this->searchLayoutBuilderComponent($entity, $component, $field_name, $search_term, $use_regex, $results, $processed);
+          $this->searchLayoutBuilderComponent($entity, $component, $field_name, $search_term, $use_regex, $results, $processed, $case_sensitive);
         }
       }
     }
@@ -980,7 +980,7 @@ class TextSearchService {
   /**
    * Search within a Layout Builder component for text content.
    */
-  protected function searchLayoutBuilderComponent(EntityInterface $parent_entity, $component, $field_name, $search_term, $use_regex, array &$results, array &$processed) {
+  protected function searchLayoutBuilderComponent(EntityInterface $parent_entity, $component, $field_name, $search_term, $use_regex, array &$results, array &$processed, $case_sensitive = FALSE) {
     try {
       $plugin = $component->getPlugin();
       $configuration = $plugin->getConfiguration();
