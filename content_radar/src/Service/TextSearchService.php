@@ -98,7 +98,7 @@ class TextSearchService {
   /**
    * Search for text across entities.
    */
-  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = []) {
+  public function search($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE) {
     $results = [];
     $total = 0;
 
@@ -113,18 +113,18 @@ class TextSearchService {
         if ($entity_type === 'node' && !empty($content_types)) {
           // For nodes with specific content types.
           foreach ($content_types as $content_type) {
-            $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode));
+            $results = array_merge($results, $this->searchContentType($content_type, $search_term, $use_regex, $langcode, $case_sensitive));
           }
         }
         elseif ($entity_type === 'paragraph' && !empty($paragraph_types)) {
           // For paragraphs with specific types.
           foreach ($paragraph_types as $paragraph_type) {
-            $results = array_merge($results, $this->searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode));
+            $results = array_merge($results, $this->searchParagraphType($paragraph_type, $search_term, $use_regex, $langcode, $case_sensitive));
           }
         }
         else {
           // For all entity types.
-          $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode));
+          $results = array_merge($results, $this->searchEntityType($entity_type, $search_term, $use_regex, $langcode, $case_sensitive));
         }
       }
 
@@ -155,7 +155,7 @@ class TextSearchService {
   /**
    * Deep search for text across all related entities.
    */
-  public function deepSearch($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = []) {
+  public function deepSearch($search_term, $use_regex = FALSE, array $entity_types = [], array $content_types = [], $langcode = '', $page = 0, $limit = 50, array $paragraph_types = [], $case_sensitive = FALSE) {
     $results = [];
     $total = 0;
     $processed = [];
@@ -984,8 +984,26 @@ class TextSearchService {
       $plugin = $component->getPlugin();
       $configuration = $plugin->getConfiguration();
       
+      // Get block label/title for better identification
+      $block_label = 'Layout Builder Block';
+      if (isset($configuration['label']) && !empty($configuration['label'])) {
+        $block_label = $configuration['label'];
+      }
+      elseif (isset($configuration['info']) && !empty($configuration['info'])) {
+        $block_label = $configuration['info'];
+      }
+      elseif (isset($configuration['admin_label']) && !empty($configuration['admin_label'])) {
+        $block_label = $configuration['admin_label'];
+      }
+      
+      // Add plugin ID for identification
+      $plugin_id = $plugin->getPluginId();
+      if ($plugin_id) {
+        $block_label .= ' (' . $this->getReadablePluginId($plugin_id) . ')';
+      }
+      
       // Search in plugin configuration for text
-      $this->searchArrayRecursively($configuration, $parent_entity, $field_name, 'Layout Builder Block', $search_term, $use_regex, $results);
+      $this->searchArrayRecursively($configuration, $parent_entity, $field_name, $block_label, $search_term, $use_regex, $results);
       
       // If it's an inline block, search the actual block entity
       if (isset($configuration['block_revision_id']) && !empty($configuration['block_revision_id'])) {
@@ -1063,24 +1081,34 @@ class TextSearchService {
   /**
    * Search for text within a string.
    */
-  protected function searchInText($text, $search_term, $use_regex) {
+  protected function searchInText($text, $search_term, $use_regex, $case_sensitive = FALSE) {
     $matches = [];
 
     if ($use_regex) {
-      if (@preg_match_all('/' . $search_term . '/i', $text, $preg_matches, PREG_OFFSET_CAPTURE) !== FALSE) {
+      $flags = $case_sensitive ? '' : 'i';
+      if (@preg_match_all('/' . $search_term . '/' . $flags, $text, $preg_matches, PREG_OFFSET_CAPTURE) !== FALSE) {
         foreach ($preg_matches[0] as $match) {
           $matches[] = $this->extractContext($text, $match[1], strlen($match[0]));
         }
       }
     }
     else {
-      $search_term_lower = mb_strtolower($search_term);
-      $text_lower = mb_strtolower($text);
-      $offset = 0;
+      if ($case_sensitive) {
+        $offset = 0;
+        while (($pos = mb_strpos($text, $search_term, $offset)) !== FALSE) {
+          $matches[] = $this->extractContext($text, $pos, mb_strlen($search_term));
+          $offset = $pos + 1;
+        }
+      }
+      else {
+        $search_term_lower = mb_strtolower($search_term);
+        $text_lower = mb_strtolower($text);
+        $offset = 0;
 
-      while (($pos = mb_strpos($text_lower, $search_term_lower, $offset)) !== FALSE) {
-        $matches[] = $this->extractContext($text, $pos, mb_strlen($search_term));
-        $offset = $pos + 1;
+        while (($pos = mb_strpos($text_lower, $search_term_lower, $offset)) !== FALSE) {
+          $matches[] = $this->extractContext($text, $pos, mb_strlen($search_term));
+          $offset = $pos + 1;
+        }
       }
     }
 
@@ -1230,6 +1258,31 @@ class TextSearchService {
     }
     
     return implode(' > ', $readable_parts);
+  }
+  
+  /**
+   * Get a readable version of a plugin ID.
+   */
+  protected function getReadablePluginId($plugin_id) {
+    // Common plugin ID mappings
+    $mappings = [
+      'inline_block' => 'Inline Block',
+      'block_content' => 'Custom Block',
+      'system_menu_block' => 'Menu Block',
+      'views_block' => 'Views Block',
+      'field_block' => 'Field Block',
+    ];
+    
+    // Check for direct mapping
+    if (isset($mappings[$plugin_id])) {
+      return $mappings[$plugin_id];
+    }
+    
+    // Clean up plugin ID
+    $readable = str_replace([':', '_', '-'], ' ', $plugin_id);
+    $readable = ucwords($readable);
+    
+    return $readable;
   }
 
   /**

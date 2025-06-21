@@ -118,18 +118,31 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('search_term', ''),
     ];
 
-    $form['use_regex'] = [
+    $form['search_options'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Search options'),
+      '#open' => TRUE,
+    ];
+
+    $form['search_options']['case_sensitive'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Case sensitive'),
+      '#description' => $this->t('Enable to make the search case-sensitive (differentiate between uppercase and lowercase).'),
+      '#default_value' => $form_state->getValue(['search_options', 'case_sensitive'], FALSE),
+    ];
+
+    $form['search_options']['use_regex'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Use regular expressions'),
       '#description' => $this->t('Enable to use regular expressions in your search.'),
-      '#default_value' => $form_state->getValue('use_regex', FALSE),
+      '#default_value' => $form_state->getValue(['search_options', 'use_regex'], FALSE),
     ];
 
-    $form['deep_search'] = [
+    $form['search_options']['deep_search'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Deep search (search all related entities)'),
       '#description' => $this->t('Enable to search recursively in ALL referenced entities, blocks, and components. This may take longer but finds text in VLSuite, Layout Builder, and all nested content. <strong>Recommended for VLSuite sites.</strong>'),
-      '#default_value' => $form_state->getValue('deep_search', FALSE),
+      '#default_value' => $form_state->getValue(['search_options', 'deep_search'], FALSE),
     ];
 
     // Get available languages.
@@ -147,8 +160,16 @@ class TextSearchForm extends FormBase {
       '#default_value' => $form_state->getValue('langcode', ''),
     ];
 
+    // Advanced filters container
+    $form['filters_container'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Advanced filters'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+    ];
+
     // Entity types selection.
-    $form['entity_types_container'] = [
+    $form['filters_container']['entity_types_container'] = [
       '#type' => 'details',
       '#title' => $this->t('Entity types'),
       '#open' => FALSE,
@@ -166,35 +187,63 @@ class TextSearchForm extends FormBase {
       }
     }
 
-    $form['entity_types_container']['entity_types'] = [
+    $form['filters_container']['entity_types_container']['entity_types'] = [
       '#type' => 'checkboxes',
       '#options' => $entity_type_options,
-      '#default_value' => $form_state->getValue(['entity_types_container', 'entity_types'], []),
+      '#default_value' => $form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []),
     ];
 
-    // Content types selection.
-    $content_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
-    $options = [];
-    foreach ($content_types as $type) {
-      $options[$type->id()] = $type->label();
+    // Bundle types selection (for all entity types)
+    $form['filters_container']['bundle_types_container'] = [
+      '#type' => 'details', 
+      '#title' => $this->t('Content/Bundle types'),
+      '#open' => FALSE,
+      '#description' => $this->t('Select specific types within each entity type.'),
+    ];
+
+    // Get bundles for each selected entity type
+    $selected_entity_types = $form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []);
+    if (!empty($selected_entity_types)) {
+      foreach ($selected_entity_types as $entity_type_id => $selected) {
+        if ($selected) {
+          $bundles = $this->getBundlesForEntityType($entity_type_id);
+          if (!empty($bundles)) {
+            $entity_definition = $this->entityTypeManager->getDefinition($entity_type_id);
+            $entity_label = $entity_definition->getLabel();
+            
+            $form['filters_container']['bundle_types_container'][$entity_type_id . '_bundles'] = [
+              '#type' => 'checkboxes',
+              '#title' => $this->t('@entity_type types', ['@entity_type' => $entity_label]),
+              '#options' => $bundles,
+              '#default_value' => $form_state->getValue(['filters_container', 'bundle_types_container', $entity_type_id . '_bundles'], []),
+              '#states' => [
+                'visible' => [
+                  ':input[name="filters_container[entity_types_container][entity_types][' . $entity_type_id . ']"]' => ['checked' => TRUE],
+                ],
+              ],
+            ];
+          }
+        }
+      }
     }
 
-    $form['content_types_container'] = [
-      '#type' => 'details',
+    // Always show content types for nodes (backward compatibility)
+    $content_types = $this->entityTypeManager->getStorage('node_type')->loadMultiple();
+    $node_options = [];
+    foreach ($content_types as $type) {
+      $node_options[$type->id()] = $type->label();
+    }
+
+    $form['filters_container']['bundle_types_container']['node_bundles'] = [
+      '#type' => 'checkboxes',
       '#title' => $this->t('Content types'),
-      '#open' => FALSE,
-      '#description' => $this->t('Select specific content types to search in.'),
+      '#options' => $node_options,
+      '#default_value' => $form_state->getValue(['filters_container', 'bundle_types_container', 'node_bundles'], []),
       '#states' => [
         'visible' => [
-          ':input[name="entity_types[node]"]' => ['checked' => TRUE],
+          ':input[name="filters_container[entity_types_container][entity_types][node]"]' => ['checked' => TRUE],
         ],
       ],
-    ];
-
-    $form['content_types_container']['content_types'] = [
-      '#type' => 'checkboxes',
-      '#options' => $options,
-      '#default_value' => $form_state->getValue(['content_types_container', 'content_types'], []),
     ];
 
     // Paragraph types selection.
@@ -411,16 +460,55 @@ class TextSearchForm extends FormBase {
   }
 
   /**
+   * Get bundles for a specific entity type.
+   */
+  protected function getBundlesForEntityType($entity_type_id) {
+    $bundles = [];
+    
+    try {
+      $entity_definition = $this->entityTypeManager->getDefinition($entity_type_id);
+      $bundle_entity_type = $entity_definition->getBundleEntityType();
+      
+      if ($bundle_entity_type) {
+        $bundle_storage = $this->entityTypeManager->getStorage($bundle_entity_type);
+        $bundle_entities = $bundle_storage->loadMultiple();
+        
+        foreach ($bundle_entities as $bundle_entity) {
+          $bundles[$bundle_entity->id()] = $bundle_entity->label();
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // If there's an error, just return empty array
+    }
+    
+    return $bundles;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
-    $use_regex = $form_state->getValue('use_regex');
-    $deep_search = $form_state->getValue('deep_search');
+    $case_sensitive = $form_state->getValue(['search_options', 'case_sensitive']);
+    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
+    $deep_search = $form_state->getValue(['search_options', 'deep_search']);
     $langcode = $form_state->getValue('langcode');
-    $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
-    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
-    $paragraph_types = array_filter($form_state->getValue(['paragraph_types_container', 'paragraph_types'], []));
+    $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
+    
+    // Get bundles for each entity type
+    $all_bundles = [];
+    foreach (array_keys($entity_types) as $entity_type_id) {
+      $bundle_values = $form_state->getValue(['filters_container', 'bundle_types_container', $entity_type_id . '_bundles'], []);
+      $filtered_bundles = array_filter($bundle_values);
+      if (!empty($filtered_bundles)) {
+        $all_bundles[$entity_type_id] = array_keys($filtered_bundles);
+      }
+    }
+    
+    // Backward compatibility
+    $content_types = isset($all_bundles['node']) ? $all_bundles['node'] : [];
+    $paragraph_types = isset($all_bundles['paragraph']) ? $all_bundles['paragraph'] : [];
 
     // Get current page from query parameter.
     $page = \Drupal::request()->query->get('page', 0);
@@ -436,7 +524,8 @@ class TextSearchForm extends FormBase {
         $langcode,
         $page,
         50,
-        array_keys($paragraph_types)
+        array_keys($paragraph_types),
+        $case_sensitive
       );
     } else {
       $results = $this->textSearchService->search(
@@ -447,7 +536,8 @@ class TextSearchForm extends FormBase {
         $langcode,
         $page,
         50,
-        array_keys($paragraph_types)
+        array_keys($paragraph_types),
+        $case_sensitive
       );
     }
 
@@ -478,11 +568,24 @@ class TextSearchForm extends FormBase {
   public function replaceSubmit(array &$form, FormStateInterface $form_state) {
     $search_term = $form_state->getValue('search_term');
     $replace_term = $form_state->getValue('replace_term');
-    $use_regex = $form_state->getValue('use_regex');
+    $case_sensitive = $form_state->getValue(['search_options', 'case_sensitive']);
+    $use_regex = $form_state->getValue(['search_options', 'use_regex']);
     $langcode = $form_state->getValue('langcode');
-    $entity_types = array_filter($form_state->getValue(['entity_types_container', 'entity_types'], []));
-    $content_types = array_filter($form_state->getValue(['content_types_container', 'content_types'], []));
-    $paragraph_types = array_filter($form_state->getValue(['paragraph_types_container', 'paragraph_types'], []));
+    $entity_types = array_filter($form_state->getValue(['filters_container', 'entity_types_container', 'entity_types'], []));
+    
+    // Get bundles for each entity type
+    $all_bundles = [];
+    foreach (array_keys($entity_types) as $entity_type_id) {
+      $bundle_values = $form_state->getValue(['filters_container', 'bundle_types_container', $entity_type_id . '_bundles'], []);
+      $filtered_bundles = array_filter($bundle_values);
+      if (!empty($filtered_bundles)) {
+        $all_bundles[$entity_type_id] = array_keys($filtered_bundles);
+      }
+    }
+    
+    // Backward compatibility
+    $content_types = isset($all_bundles['node']) ? $all_bundles['node'] : [];
+    $paragraph_types = isset($all_bundles['paragraph']) ? $all_bundles['paragraph'] : [];
     $replace_mode = $form_state->getValue('replace_mode', 'selected');
 
     // Get selected items.
