@@ -404,24 +404,12 @@ class TextSearchForm extends FormBase {
 
       // Create a container for selected items that will be populated by JavaScript
       if ($this->currentUser->hasPermission('replace content radar')) {
-        $form['results_container']['selected_items'] = [
-          '#tree' => TRUE,
-          '#type' => 'container',
-          '#attributes' => ['class' => ['selected-items-container']],
+        // Use a single hidden field to store selected items as JSON
+        $form['selected_items_data'] = [
+          '#type' => 'hidden',
+          '#default_value' => '',
+          '#attributes' => ['id' => 'selected-items-data'],
         ];
-        
-        // Add hidden checkboxes for each result item to ensure form processing
-        foreach ($results['items'] as $item) {
-          $checkbox_key = $item['entity_type'] . ':' . $item['id'] . ':' . $item['field_name'] . ':' . $item['langcode'];
-          $form['results_container']['selected_items'][$checkbox_key] = [
-            '#type' => 'checkbox',
-            '#default_value' => FALSE,
-            '#attributes' => [
-              'class' => ['result-item-checkbox-hidden'],
-              'data-checkbox-key' => $checkbox_key,
-            ],
-          ];
-        }
       }
     }
 
@@ -705,15 +693,25 @@ class TextSearchForm extends FormBase {
     // Get selected items.
     $selected_items = [];
     if ($replace_mode === 'selected') {
-      // Obtener los valores correctamente del contenedor anidado
-      $selected_items = $form_state->getValue(['results_container', 'selected_items'], []);
+      // Get selected items from JSON data
+      $selected_items_json = $form_state->getValue('selected_items_data', '');
       
       // DEBUG logging
       \Drupal::logger('content_radar')->debug('DEBUG - Replace mode: @mode', ['@mode' => $replace_mode]);
-      \Drupal::logger('content_radar')->debug('DEBUG - Selected items from form: @items', ['@items' => print_r($selected_items, TRUE)]);
-      \Drupal::logger('content_radar')->debug('DEBUG - Selected items count before filter: @count', ['@count' => count($selected_items)]);
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items JSON: @json', ['@json' => $selected_items_json]);
       
-      $selected_items = array_filter($selected_items);
+      if (!empty($selected_items_json)) {
+        $selected_items_array = json_decode($selected_items_json, TRUE);
+        if (is_array($selected_items_array)) {
+          // Convert array to the expected format
+          foreach ($selected_items_array as $key) {
+            $selected_items[$key] = 1;
+          }
+        }
+      }
+      
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items decoded: @items', ['@items' => print_r($selected_items, TRUE)]);
+      \Drupal::logger('content_radar')->debug('DEBUG - Selected items count: @count', ['@count' => count($selected_items)]);
       
       // Validación estricta
       if (empty($selected_items)) {

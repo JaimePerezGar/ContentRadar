@@ -5,7 +5,6 @@ search:
   css:
     theme:
       css/content-radar.css: {}
-      css/content-radar-hidden-checkboxes.css: {}
   dependencies:
     - core/jquery
     - core/drupal

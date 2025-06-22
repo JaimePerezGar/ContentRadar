@@ -1,56 +1,67 @@
-# Checkbox Synchronization Fix - ContentRadar
+# Checkbox Synchronization Fix - ContentRadar (v2)
 
 ## Problema
 Los checkboxes seleccionados en la tabla de resultados no estaban siendo enviados correctamente al servidor, causando el error "No items selected for replacement".
 
 ## Causa Raíz
-Los checkboxes en el template Twig no estaban conectados con el formulario Drupal. Eran elementos HTML simples que no se procesaban como parte del form submission.
+Los checkboxes en el template Twig no estaban conectados con el formulario Drupal. El enfoque anterior con checkboxes ocultos no funcionaba correctamente al reconstruir el formulario.
 
-## Solución Implementada
+## Solución Implementada (Enfoque JSON)
 
-### 1. Creación de Checkboxes en el Formulario PHP
+### 1. Campo Hidden para Almacenar Selecciones
 ```php
 // En TextSearchForm::buildForm()
-foreach ($results['items'] as $item) {
-  $checkbox_key = $item['entity_type'] . ':' . $item['id'] . ':' . $item['field_name'] . ':' . $item['langcode'];
-  $form['results_container']['selected_items'][$checkbox_key] = [
-    '#type' => 'checkbox',
-    '#default_value' => FALSE,
-    '#attributes' => [
-      'class' => ['result-item-checkbox-hidden'],
-      'data-checkbox-key' => $checkbox_key,
-    ],
-  ];
+$form['selected_items_data'] = [
+  '#type' => 'hidden',
+  '#default_value' => '',
+  '#attributes' => ['id' => 'selected-items-data'],
+];
+```
+
+### 2. JavaScript para Actualizar el Campo Hidden
+```javascript
+function updateSelectedItemsData() {
+  var selectedKeys = [];
+  $itemCheckboxes.filter(':checked').each(function() {
+    var key = $(this).data('checkbox-key');
+    if (key) {
+      selectedKeys.push(key);
+    }
+  });
+  
+  $('#selected-items-data').val(JSON.stringify(selectedKeys));
 }
 ```
 
-### 2. Actualización del Template Twig
-- Removido el atributo `name` de los checkboxes visibles
-- Añadido `data-checkbox-key` para identificación
-
-### 3. Sincronización JavaScript
-- Los checkboxes visibles ahora sincronizan su estado con los checkboxes ocultos del formulario
-- Cuando el usuario marca/desmarca un checkbox visible, JavaScript actualiza el correspondiente checkbox del formulario
-
-### 4. Obtención Correcta de Valores
+### 3. Procesamiento en PHP
 ```php
 // En TextSearchForm::replaceSubmit()
-$selected_items = $form_state->getValue(['results_container', 'selected_items'], []);
+$selected_items_json = $form_state->getValue('selected_items_data', '');
+if (!empty($selected_items_json)) {
+  $selected_items_array = json_decode($selected_items_json, TRUE);
+  if (is_array($selected_items_array)) {
+    foreach ($selected_items_array as $key) {
+      $selected_items[$key] = 1;
+    }
+  }
+}
 ```
 
-### 5. CSS para Ocultar Checkboxes del Formulario
-- Los checkboxes del formulario están ocultos visualmente pero presentes en el DOM
-
 ## Flujo de Datos
-1. Usuario marca checkbox visible en la tabla
-2. JavaScript detecta el cambio
-3. JavaScript actualiza el checkbox oculto correspondiente del formulario
-4. Al enviar, Drupal procesa los checkboxes del formulario
-5. El servidor recibe los valores seleccionados correctamente
+1. Usuario marca checkboxes en la tabla
+2. JavaScript recolecta las keys de los items seleccionados
+3. JavaScript actualiza el campo hidden con un array JSON
+4. Al enviar el formulario, PHP decodifica el JSON
+5. Los items seleccionados se procesan correctamente
+
+## Ventajas del Nuevo Enfoque
+- No depende de la reconstrucción del formulario
+- Más simple y directo
+- Menos elementos DOM
+- Compatible con AJAX
 
 ## Archivos Modificados
 - `src/Form/TextSearchForm.php`
 - `templates/content-radar-results.html.twig`
 - `js/content-radar.js`
-- `css/content-radar-hidden-checkboxes.css`
 - `content_radar.libraries.yml`

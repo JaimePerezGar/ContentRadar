@@ -35,34 +35,16 @@
         var checked = $(this).prop('checked');
         $itemCheckboxes.prop('checked', checked);
         
-        // Sync all hidden checkboxes
-        $itemCheckboxes.each(function() {
-          var checkboxKey = $(this).data('checkbox-key');
-          var $hiddenCheckbox = $('input[name="results_container[selected_items][' + checkboxKey + ']"]');
-          if ($hiddenCheckbox.length) {
-            $hiddenCheckbox.prop('checked', checked);
-          }
-        });
-        
         updateSelectAllState();
         updateReplaceButtonVisibility();
+        updateSelectedItemsData();
       });
 
       // Individual checkbox change
       $itemCheckboxes.once('content-radar-select-item').on('change', function () {
-        // Sync with hidden form checkbox
-        var $checkbox = $(this);
-        var checkboxKey = $checkbox.data('checkbox-key');
-        var isChecked = $checkbox.prop('checked');
-        
-        // Find and update the corresponding hidden checkbox in the form
-        var $hiddenCheckbox = $('input[name="results_container[selected_items][' + checkboxKey + ']"]');
-        if ($hiddenCheckbox.length) {
-          $hiddenCheckbox.prop('checked', isChecked);
-        }
-        
         updateSelectAllState();
         updateReplaceButtonVisibility();
+        updateSelectedItemsData();
       });
 
       // Update replace button visibility and mode based on selection
@@ -127,9 +109,28 @@
         }
       });
 
+      // Update the hidden field with selected items data
+      function updateSelectedItemsData() {
+        var selectedKeys = [];
+        $itemCheckboxes.filter(':checked').each(function() {
+          var key = $(this).data('checkbox-key');
+          if (key) {
+            selectedKeys.push(key);
+          }
+        });
+        
+        // Update the hidden field
+        var $hiddenField = $('#selected-items-data');
+        if ($hiddenField.length) {
+          $hiddenField.val(JSON.stringify(selectedKeys));
+          console.log('Updated selected items:', selectedKeys);
+        }
+      }
+
       // Initialize on page load
       updateSelectAllState();
       updateReplaceButtonVisibility();
+      updateSelectedItemsData();
     }
   };
 
