@@ -1,0 +1,7 @@
+/**
+ * Hide the form checkboxes that are used for form submission.
+ * The visible checkboxes in the table are for UI only.
+ */
+.selected-items-container .result-item-checkbox-hidden {
+  display: none !important;
+}

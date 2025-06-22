@@ -34,12 +34,33 @@
       $selectAllCheckbox.once('content-radar-select-all').on('change', function () {
         var checked = $(this).prop('checked');
         $itemCheckboxes.prop('checked', checked);
+        
+        // Sync all hidden checkboxes
+        $itemCheckboxes.each(function() {
+          var checkboxKey = $(this).data('checkbox-key');
+          var $hiddenCheckbox = $('input[name="results_container[selected_items][' + checkboxKey + ']"]');
+          if ($hiddenCheckbox.length) {
+            $hiddenCheckbox.prop('checked', checked);
+          }
+        });
+        
         updateSelectAllState();
         updateReplaceButtonVisibility();
       });
 
       // Individual checkbox change
       $itemCheckboxes.once('content-radar-select-item').on('change', function () {
+        // Sync with hidden form checkbox
+        var $checkbox = $(this);
+        var checkboxKey = $checkbox.data('checkbox-key');
+        var isChecked = $checkbox.prop('checked');
+        
+        // Find and update the corresponding hidden checkbox in the form
+        var $hiddenCheckbox = $('input[name="results_container[selected_items][' + checkboxKey + ']"]');
+        if ($hiddenCheckbox.length) {
+          $hiddenCheckbox.prop('checked', isChecked);
+        }
+        
         updateSelectAllState();
         updateReplaceButtonVisibility();
       });
